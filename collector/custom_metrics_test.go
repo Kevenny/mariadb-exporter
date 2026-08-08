@@ -42,7 +42,7 @@ mariadb_active_sessions_by_schema:
 func TestCustomMetricsCollector(t *testing.T) {
 	path := writeTempYAML(t, exampleYAML)
 
-	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.NoError(t, err)
 	require.True(t, c.Enabled())
 
@@ -88,7 +88,7 @@ mariadb_custom_io:
         description: "Escritas"
 `)
 
-	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.NoError(t, err)
 
 	db, mock := newMockDB(t)
@@ -114,7 +114,7 @@ metrica_ruim:
         usage: "HISTOGRAM"
 `)
 
-	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "usage")
 }
@@ -127,7 +127,7 @@ metrica_sem_query:
         usage: "GAUGE"
 `)
 
-	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "query")
 }
@@ -142,13 +142,13 @@ so_labels:
         usage: "LABEL"
 `)
 
-	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "COUNTER ou GAUGE")
 }
 
 func TestCustomMetricsCollectorFileNotFound(t *testing.T) {
-	_, err := NewCustomMetricsCollector([]string{filepath.Join(t.TempDir(), "inexistente.yml")}, testLogger(), allFeatures())
+	_, err := NewCustomMetricsCollector([]string{filepath.Join(t.TempDir(), "inexistente.yml")}, testLogger(), allFeatures(), nil)
 	require.Error(t, err)
 }
 
@@ -163,7 +163,7 @@ mariadb_col_errada:
         usage: "GAUGE"
 `)
 
-	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.NoError(t, err)
 
 	db, mock := newMockDB(t)
@@ -177,7 +177,7 @@ mariadb_col_errada:
 
 // Sem arquivos, o coletor fica desabilitado.
 func TestCustomMetricsCollectorDisabledWithoutFiles(t *testing.T) {
-	c, err := NewCustomMetricsCollector(nil, testLogger(), allFeatures())
+	c, err := NewCustomMetricsCollector(nil, testLogger(), allFeatures(), nil)
 	require.NoError(t, err)
 	require.False(t, c.Enabled())
 }
@@ -192,7 +192,7 @@ func TestCustomMetricsCollectorMultipleFiles(t *testing.T) {
 	b := filepath.Join(dir, "b.yml")
 	require.NoError(t, os.WriteFile(b, []byte("mariadb_b:\n  query: SELECT 2 AS v\n  metrics:\n    - v:\n        usage: \"GAUGE\"\n"), 0o600))
 
-	c, err := NewCustomMetricsCollector([]string{a, b}, testLogger(), allFeatures())
+	c, err := NewCustomMetricsCollector([]string{a, b}, testLogger(), allFeatures(), nil)
 	require.NoError(t, err)
 	require.Len(t, c.metrics, 2)
 

@@ -31,7 +31,10 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
       - ./dev/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./dev/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      # Monta os dashboards versionados do repositório: editar um JSON em
+      # dashboards/ reflete no Grafana em até 30s (updateIntervalSeconds), sem
+      # precisar reimportar nada.
+      - ./dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000:3000"
     depends_on:

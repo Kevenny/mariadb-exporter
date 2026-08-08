@@ -1,0 +1,360 @@
+{
+  "title": "MariaDB — Usuários & Acesso",
+  "uid": "mariadb-users-access",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "tags": ["mariadb", "userstat", "security"],
+  "time": { "from": "now-1h", "to": "now" },
+  "description": "Requer userstat=ON (SET GLOBAL userstat = ON). Sem isso os coletores userstat e clientstat expõem zero métricas.",
+  "templating": {
+    "list": [
+      { "name": "datasource", "type": "datasource", "query": "prometheus" },
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_up, cluster)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_up{cluster=~\"$cluster\"}, environment)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "service_name",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_up{cluster=~\"$cluster\", environment=~\"$environment\"}, service_name)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "user",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_user_total_connections_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}, user)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Segurança e conectividade",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 1,
+      "title": "userstat habilitado?",
+      "description": "Sem userstat=ON as métricas por usuário/tabela/índice não existem.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_userstat_enabled{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "OFF", "color": "red", "index": 0 },
+                "1": { "text": "ON", "color": "green", "index": 1 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Acessos negados",
+      "description": "Tentativas de acesso rejeitadas por usuário. Um pico pode indicar credencial expirada numa aplicação — ou tentativa de força bruta.",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 9, "x": 6, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_user_access_denied_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m]) > 0",
+          "legendFormat": "{{service_name}} / {{user}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 3,
+      "title": "Conexões abortadas (servidor)",
+      "description": "aborted_connects são tentativas que falharam na autenticação/handshake; aborted_clients são clientes que sumiram sem fechar a conexão.",
+      "type": "timeseries",
+      "gridPos": { "h": 5, "w": 9, "x": 15, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_aborted_connects_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} connects",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mariadb_aborted_clients_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} clients",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "type": "row",
+      "title": "Conexões",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 4,
+      "title": "Uso de max_connections (%)",
+      "description": "Proximidade de max_connections causa erro 'Too many connections'. Considere pool na aplicação antes de aumentar o limite.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "(sum by (service_name) (mariadb_user_concurrent_connections{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}) / on(service_name) clamp_min(mariadb_max_connections{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}, 1)) * 100",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 70 },
+              { "color": "red", "value": 90 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Conexões simultâneas por usuário",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_user_concurrent_connections{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}",
+          "legendFormat": "{{service_name}} / {{user}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "normal" } } } }
+    },
+    {
+      "id": 6,
+      "title": "Novas conexões por usuário",
+      "description": "Taxa alta com poucas conexões simultâneas indica ausência de pool: a aplicação abre e fecha conexão a cada operação.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_user_total_connections_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m])",
+          "legendFormat": "{{service_name}} / {{user}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 7,
+      "title": "Conexões perdidas por usuário",
+      "description": "Conexões encerradas anormalmente — timeout de rede, wait_timeout, ou processo do cliente morto.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_user_lost_connections_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m]) > 0",
+          "legendFormat": "{{service_name}} / {{user}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "type": "row",
+      "title": "Perfil de carga por usuário",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 8,
+      "title": "Comandos por usuário (SELECT / UPDATE / outros)",
+      "description": "Mostra o perfil de cada usuário: leitura, escrita ou administrativo.",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_user_select_commands_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m])",
+          "legendFormat": "{{user}} SELECT",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mariadb_user_update_commands_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m])",
+          "legendFormat": "{{user}} UPDATE",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(mariadb_user_other_commands_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m])",
+          "legendFormat": "{{user}} outros",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 9,
+      "title": "Eficiência de leitura por usuário",
+      "description": "rows_read muito acima de rows_sent significa que o servidor varre muitas linhas para devolver poucas — típico de falta de índice.",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 24 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_user_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m]) / clamp_min(rate(mariadb_user_rows_sent_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m]), 0.001)",
+          "legendFormat": "{{user}} lidas/enviadas",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 100 },
+              { "color": "red", "value": 1000 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Top 10 usuários por linhas lidas",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "topk(10, rate(mariadb_user_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true },
+            "renameByName": { "Value": "Linhas lidas/s" }
+          }
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Top 10 usuários por linhas alteradas",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "topk(10, rate(mariadb_user_rows_changed_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true },
+            "renameByName": { "Value": "Linhas alteradas/s" }
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Por origem (clientstat)",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 12,
+      "title": "Conexões por host de origem",
+      "description": "Do CLIENT_STATISTICS: agrupa por IP/host de onde a conexão veio, independente do usuário.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 42 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_client_total_connections_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} / {{client}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 13,
+      "title": "Tráfego de linhas por host de origem",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 42 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_client_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{client}} lidas/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mariadb_client_rows_sent_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{client}} enviadas/s",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    }
+  ]
+}

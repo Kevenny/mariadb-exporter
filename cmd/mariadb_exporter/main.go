@@ -225,7 +225,7 @@ func buildCollectors(cfg *config.Config, logger log.Logger, detector *exporter.F
 	)
 
 	if len(cfg.CustomMetrics) > 0 {
-		custom, err := collector.NewCustomMetricsCollector(cfg.CustomMetrics, logger, detector)
+		custom, err := collector.NewCustomMetricsCollector(cfg.CustomMetrics, logger, detector, cfg.PMM.ConstLabels())
 		if err != nil {
 			return nil, err
 		}

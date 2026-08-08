@@ -45,7 +45,7 @@ func TestCustomMetricsRejectsInvalidMetricName(t *testing.T) {
     - total:
         usage: "GAUGE"
 `)
-			_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+			_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 			require.Error(t, err, "nome de métrica inválido deveria ser rejeitado no load, não em runtime")
 		})
 	}
@@ -62,7 +62,7 @@ mariadb_teste:
     - total:
         usage: "GAUGE"
 `)
-	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.Error(t, err, "nome de label inválido deveria ser rejeitado no load")
 }
 
@@ -80,7 +80,7 @@ mariadb_teste:
     - total:
         usage: "GAUGE"
 `)
-	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.Error(t, err, "label duplicado deveria ser rejeitado no load")
 }
 
@@ -96,7 +96,7 @@ mariadb_teste:
     - total:
         usage: "GAUGE"
 `)
-	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.Error(t, err, "coluna usada como label e valor deveria ser rejeitada")
 }
 
@@ -117,7 +117,7 @@ mariadb_extra_colunas:
         usage: "GAUGE"
 `)
 
-	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.NoError(t, err)
 
 	db, mock := newMockDB(t)
@@ -148,7 +148,7 @@ mariadb_utf8_teste:
         usage: "GAUGE"
 `)
 
-	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.NoError(t, err)
 
 	db, mock := newMockDB(t)
@@ -181,7 +181,7 @@ func isValidUTF8(s string) bool {
 func TestCustomMetricsHandlesEmptyYAML(t *testing.T) {
 	path := writeTempYAML(t, "")
 
-	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.NoError(t, err, "YAML vazio não é erro, apenas não define métricas")
 	require.Empty(t, c.metrics)
 }
@@ -191,7 +191,7 @@ func TestCustomMetricsHandlesEmptyYAML(t *testing.T) {
 func TestCustomMetricsRejectsWrongTopLevelType(t *testing.T) {
 	path := writeTempYAML(t, "- isso\n- e\n- uma\n- lista\n")
 
-	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures())
+	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.Error(t, err)
 }
 
@@ -377,7 +377,7 @@ func TestCollectRespectsContextCancellation(t *testing.T) {
 func TestCustomMetricsPathIsDirectory(t *testing.T) {
 	dir := t.TempDir()
 
-	_, err := NewCustomMetricsCollector([]string{dir}, testLogger(), allFeatures())
+	_, err := NewCustomMetricsCollector([]string{dir}, testLogger(), allFeatures(), nil)
 	require.Error(t, err, "diretório no lugar de arquivo deveria dar erro")
 }
 
@@ -386,7 +386,49 @@ func TestCustomMetricsPathIsDirectory(t *testing.T) {
 func TestCustomMetricsPathWithNullByte(t *testing.T) {
 	_, err := NewCustomMetricsCollector(
 		[]string{filepath.Join(os.TempDir(), "arquivo\x00malicioso.yml")},
-		testLogger(), allFeatures(),
+		testLogger(), allFeatures(), nil,
 	)
 	require.Error(t, err)
+}
+
+// As custom metrics precisam carregar as mesmas ConstLabels de integração com o
+// PMM que as métricas nativas. Sem isso, um painel filtrando por cluster ou
+// service_name não encontraria a série — o dado existiria mas ficaria invisível
+// no dashboard.
+func TestCustomMetricsCarryPMMConstLabels(t *testing.T) {
+	path := writeTempYAML(t, `
+mariadb_teste_labels:
+  query: SELECT 'demo' AS schema_name, 7 AS total
+  metrics:
+    - schema_name:
+        usage: "LABEL"
+    - total:
+        usage: "GAUGE"
+`)
+
+	constLabels := prometheus.Labels{
+		"service_name": "mariadb-host01",
+		"cluster":      "prod-cluster",
+		"environment":  "production",
+	}
+
+	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), constLabels)
+	require.NoError(t, err)
+
+	db, mock := newMockDB(t)
+	mock.ExpectQuery("SELECT 'demo'").WillReturnRows(
+		sqlmock.NewRows([]string{"schema_name", "total"}).AddRow("demo", 7),
+	)
+
+	metrics, err := runCollect(t, c, db)
+	require.NoError(t, err)
+
+	snaps := snapshot(t, metrics)
+	m := requireMetric(t, snaps, "mariadb_teste_labels", map[string]string{
+		"schema_name":  "demo",
+		"service_name": "mariadb-host01",
+		"cluster":      "prod-cluster",
+		"environment":  "production",
+	})
+	require.Equal(t, float64(7), m.Value)
 }

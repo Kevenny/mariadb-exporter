@@ -47,6 +47,17 @@ services:
       - "9104:9104"
     command:
       - --collector.galera
+      # Os dashboards filtram por cluster/environment/service_name; definir os
+      # metadados aqui faz as variáveis de template terem valores no ambiente
+      # de desenvolvimento, exercitando os filtros de verdade.
+      - --pmm.cluster=dev-cluster
+      - --pmm.environment=dev
+      - --pmm.service-name=mariadb-dev
+      # Habilita a custom metric mariadb_orphan_indexes, usada pelo dashboard
+      # "Tabelas & Índices" para detectar índices realmente sem uso.
+      - --custom-metrics=/custom_metrics/example.yml
+    volumes:
+      - ./custom_metrics:/custom_metrics:ro
 
 volumes:
   mariadb_data:

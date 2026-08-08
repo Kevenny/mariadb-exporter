@@ -1,0 +1,327 @@
+{
+  "title": "MariaDB — Galera Cluster",
+  "uid": "mariadb-galera",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "tags": ["mariadb", "galera", "cluster"],
+  "time": { "from": "now-1h", "to": "now" },
+  "description": "Requer o coletor galera habilitado (--collector.galera, opt-in) e wsrep ativo na instância.",
+  "templating": {
+    "list": [
+      { "name": "datasource", "type": "datasource", "query": "prometheus" },
+      {
+        "name": "cluster_name",
+        "label": "Cluster Galera",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_galera_cluster_size, cluster_name)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "service_name",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_galera_cluster_size{cluster_name=~\"$cluster_name\"}, service_name)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Coletor galera disponível?",
+      "description": "0 significa que o wsrep não está ativo nesta instância ou que --collector.galera não foi habilitado (o coletor é opt-in).",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_collector_available{collector=\"galera\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "INDISPONÍVEL", "color": "text", "index": 0 },
+                "1": { "text": "OK", "color": "green", "index": 1 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Tamanho do cluster",
+      "description": "Número de nós que formam o componente atual. Uma queda indica nó saindo ou partição de rede.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "max by (cluster_name) (mariadb_galera_cluster_size{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"})",
+          "legendFormat": "{{cluster_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 2 },
+              { "color": "green", "value": 3 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Status do componente",
+      "description": "Primary = o componente tem quórum e aceita escritas. non-Primary = perdeu quórum (split-brain evitado) e rejeita escritas.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_galera_cluster_status{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "non-Primary", "color": "red", "index": 0 },
+                "1": { "text": "Primary", "color": "green", "index": 1 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "Nós não sincronizados",
+      "description": "Nós cujo estado local não é 'synced' (3). Durante um SST isso é esperado e temporário.",
+      "type": "stat",
+      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "count(mariadb_galera_local_state{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"} != 3) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }]
+          }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Estado local do nó",
+      "description": "0=joining, 1=donor/desynced, 2=joined, 3=synced. Apenas 'synced' participa plenamente da replicação.",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_galera_local_state{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 3,
+          "custom": { "lineInterpolation": "stepAfter", "fillOpacity": 10 },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "joining", "color": "orange", "index": 0 },
+                "1": { "text": "donor/desynced", "color": "yellow", "index": 1 },
+                "2": { "text": "joined", "color": "blue", "index": 2 },
+                "3": { "text": "synced", "color": "green", "index": 3 }
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Tamanho do cluster ao longo do tempo",
+      "description": "Mudanças aqui são eventos de membership: nó entrando, saindo ou partição de rede.",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_galera_cluster_size{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{cluster_name}} / {{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "lineInterpolation": "stepAfter" }, "min": 0 }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Flow control — fração do tempo pausado",
+      "description": "Quando um nó não acompanha o ritmo, o Galera pausa a replicação do cluster inteiro. Valor sustentado acima de 0 indica nó lento limitando todos.",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_galera_flow_control_paused{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 0.05 },
+              { "color": "red", "value": 0.2 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Filas de replicação (média)",
+      "description": "recv_queue alto = o nó recebe mais do que consegue aplicar (nó lento). send_queue alto = gargalo de rede ou nós lentos a jusante.",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_galera_recv_queue_avg{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}} recv",
+          "refId": "A"
+        },
+        {
+          "expr": "mariadb_galera_send_queue_avg{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}} send",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "min": 0 } }
+    },
+    {
+      "id": 9,
+      "title": "Visão consolidada por nó",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 23 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_galera_cluster_size{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "SIZE"
+        },
+        {
+          "expr": "mariadb_galera_cluster_status{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "STATUS"
+        },
+        {
+          "expr": "mariadb_galera_local_state{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "STATE"
+        },
+        {
+          "expr": "mariadb_galera_flow_control_paused{cluster_name=~\"$cluster_name\", service_name=~\"$service_name\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "FC"
+        }
+      ],
+      "transformations": [
+        { "id": "merge", "options": {} },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true },
+            "renameByName": {
+              "Value #SIZE": "Nós no cluster",
+              "Value #STATUS": "Componente",
+              "Value #STATE": "Estado local",
+              "Value #FC": "Flow control pausado"
+            }
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Componente" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  { "type": "value", "options": { "0": { "text": "non-Primary", "color": "red", "index": 0 }, "1": { "text": "Primary", "color": "green", "index": 1 } } }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Estado local" },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "0": { "text": "joining", "color": "orange", "index": 0 },
+                      "1": { "text": "donor/desynced", "color": "yellow", "index": 1 },
+                      "2": { "text": "joined", "color": "blue", "index": 2 },
+                      "3": { "text": "synced", "color": "green", "index": 3 }
+                    }
+                  }
+                ]
+              },
+              { "id": "custom.cellOptions", "value": { "type": "color-text" } }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

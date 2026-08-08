@@ -1,0 +1,485 @@
+{
+  "title": "MariaDB — Tabelas & Índices",
+  "uid": "mariadb-tables-indexes",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "1m",
+  "tags": [
+    "mariadb",
+    "userstat",
+    "tables",
+    "indexes"
+  ],
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "description": "Requer userstat=ON. Os coletores tablestat/indexstat aplicam limite por scrape (--collector.tablestat.limit, --collector.indexstat.limit), ordenando por rows_read DESC — então as tabelas e índices mais movimentados são sempre os preservados.",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus"
+      },
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(mariadb_up, cluster)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(mariadb_up{cluster=~\"$cluster\"}, environment)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "service_name",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(mariadb_up{cluster=~\"$cluster\", environment=~\"$environment\"}, service_name)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "schema",
+        "type": "query",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
+        },
+        "query": "label_values(mariadb_table_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}, schema)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Índices sem uso",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 20,
+      "title": "Como ler esta seção",
+      "type": "text",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "O `INDEX_STATISTICS` do MariaDB **só lista índices que já foram lidos ao menos uma vez**. Um índice nunca tocado desde o último restart não aparece na tabela — e portanto nunca aparece com `rows_read = 0`.\n\nNa prática isso significa que **`mariadb_index_unused` costuma ficar vazio**: ele só pega o caso específico de um índice já presente na tabela cujo contador está zerado.\n\nPara detectar os índices **realmente** órfãos, use a custom metric `mariadb_orphan_indexes`, já incluída em `custom_metrics/example.yml` — ela faz um `LEFT JOIN` entre os índices declarados (`STATISTICS`) e os que registraram leitura (`INDEX_STATISTICS`). Habilite com:\n\n```\nmariadb_exporter --custom-metrics=/etc/mariadb_exporter/example.yml\n```\n\nO painel *Índices órfãos por schema* abaixo consome essa métrica.\n\n> Só confie no resultado se o uptime cobrir um ciclo completo de negócio: um índice usado apenas no fechamento mensal parecerá órfão se o servidor reiniciou ontem. Confirme com o time de aplicação antes de remover."
+      }
+    },
+    {
+      "id": 1,
+      "title": "Total de índices sem uso (ver nota acima)",
+      "description": "Índices presentes no INDEX_STATISTICS com rows_read = 0. Costuma ser 0 porque índices nunca lidos não entram na tabela — leia o painel de nota acima.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "count(mariadb_index_unused{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Índices órfãos por schema (custom metric)",
+      "description": "Vem de mariadb_orphan_indexes (custom_metrics/example.yml): índices declarados que nunca registraram leitura. Este é o número confiável — a métrica nativa mariadb_index_unused não detecta índices jamais tocados.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 6,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "mariadb_orphan_indexes{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}} / {{schema_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 21,
+      "title": "Total de índices órfãos",
+      "description": "Soma de mariadb_orphan_indexes. Zero pode significar que a custom metric não está habilitada — confira o painel de nota.",
+      "type": "stat",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 6
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "sum(mariadb_orphan_indexes{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}) or vector(0)",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 5 },
+              { "color": "red", "value": 20 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Candidatos a remoção — índices sem nenhuma leitura",
+      "description": "Confirme com o time de aplicação antes de remover: o índice pode servir a uma rotina que roda menos vezes que o uptime do servidor (fechamento mensal, por exemplo). PRIMARY nunca deve ser removido.",
+      "type": "table",
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 11
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "mariadb_index_unused{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true,
+              "Value": true
+            },
+            "renameByName": {
+              "service_name": "Instância",
+              "schema": "Schema",
+              "table": "Tabela",
+              "index": "Índice"
+            }
+          }
+        },
+        {
+          "id": "sortBy",
+          "options": {
+            "fields": {},
+            "sort": [
+              {
+                "field": "Schema"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "title": "Tabelas mais acessadas",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 21
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 4,
+      "title": "Top 10 tabelas por leitura",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(mariadb_table_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}[5m]))",
+          "legendFormat": "{{schema}}.{{table}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Top 10 tabelas por escrita",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(mariadb_table_rows_changed_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}[5m]))",
+          "legendFormat": "{{schema}}.{{table}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "Custo de índice na escrita (rows_changed_x_indexes / rows_changed)",
+      "description": "Quantos índices são efetivamente atualizados por linha alterada. Um valor alto numa tabela de escrita intensa indica que há índices demais encarecendo cada INSERT/UPDATE.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(mariadb_table_rows_changed_x_indexes_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}[5m]) / clamp_min(rate(mariadb_table_rows_changed_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}[5m]), 0.001))",
+          "legendFormat": "{{schema}}.{{table}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "decimals": 1
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Escrita amplificada por índices",
+      "description": "Total de atualizações de índice por segundo. É o custo real de manutenção dos índices na carga de escrita.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 31
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(mariadb_table_rows_changed_x_indexes_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}[5m]))",
+          "legendFormat": "{{schema}}.{{table}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Índices em uso",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 40
+      },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 8,
+      "title": "Top 10 índices por leitura",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "topk(10, rate(mariadb_index_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}[5m]))",
+          "legendFormat": "{{schema}}.{{table}}.{{index}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Detalhe por tabela",
+      "type": "table",
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 41
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "targets": [
+        {
+          "expr": "topk(20, rate(mariadb_table_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}[5m]))",
+          "format": "table",
+          "instant": true,
+          "refId": "READ"
+        },
+        {
+          "expr": "rate(mariadb_table_rows_changed_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", schema=~\"$schema\"}[5m])",
+          "format": "table",
+          "instant": true,
+          "refId": "WRITE"
+        }
+      ],
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "instance": true
+            },
+            "renameByName": {
+              "schema": "Schema",
+              "table": "Tabela",
+              "Value #READ": "Leituras/s",
+              "Value #WRITE": "Escritas/s"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

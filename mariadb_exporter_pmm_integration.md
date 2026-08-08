@@ -169,7 +169,7 @@ CREATE USER 'mariadb_exporter'@'127.0.0.1'
 
 -- Privilégios mínimos necessários por coletor:
 -- global_status, global_variables, info → SELECT
--- replication → REPLICATION CLIENT
+-- replication → SLAVE MONITOR (MariaDB >= 10.5; REPLICATION CLIENT nao basta)
 -- userstat, tablestat, indexstat → SELECT (já coberto)
 -- metadata_locks, disks → SELECT (já coberto)
 -- innodb → PROCESS
@@ -178,6 +178,8 @@ CREATE USER 'mariadb_exporter'@'127.0.0.1'
 GRANT SELECT    ON *.*  TO 'mariadb_exporter'@'127.0.0.1';
 GRANT PROCESS   ON *.*  TO 'mariadb_exporter'@'127.0.0.1';
 GRANT REPLICATION CLIENT ON *.* TO 'mariadb_exporter'@'127.0.0.1';
+-- Obrigatorio a partir do MariaDB 10.5 para SHOW ALL SLAVES STATUS:
+GRANT SLAVE MONITOR ON *.* TO 'mariadb_exporter'@'127.0.0.1';
 
 -- RELOAD só se quiser suportar FLUSH QUERY_RESPONSE_TIME via exporter
 -- GRANT RELOAD ON *.* TO 'mariadb_exporter'@'127.0.0.1';

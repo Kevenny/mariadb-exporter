@@ -55,13 +55,18 @@ type CustomMetricsCollector struct {
 
 // NewCustomMetricsCollector carrega os arquivos YAML informados e devolve o
 // coletor. Um arquivo inválido é um erro de configuração e aborta o startup.
-func NewCustomMetricsCollector(paths []string, logger log.Logger, features FeatureProvider) (*CustomMetricsCollector, error) {
+//
+// constLabels são os metadados de integração com o PMM (service_name, cluster,
+// environment, replication_set). Aplicá-los também às custom metrics é o que
+// permite filtrá-las nos dashboards junto com as métricas nativas — sem isso, um
+// painel com filtro por cluster simplesmente não encontraria a série.
+func NewCustomMetricsCollector(paths []string, logger log.Logger, features FeatureProvider, constLabels prometheus.Labels) (*CustomMetricsCollector, error) {
 	c := &CustomMetricsCollector{
 		base: newBase("custom_metrics", "Métricas definidas pelo usuário em arquivos YAML.", len(paths) > 0, logger, features),
 	}
 
 	for _, path := range paths {
-		metrics, err := loadCustomMetricsFile(path)
+		metrics, err := loadCustomMetricsFile(path, constLabels)
 		if err != nil {
 			return nil, fmt.Errorf("custom metrics %q: %w", path, err)
 		}
@@ -72,7 +77,7 @@ func NewCustomMetricsCollector(paths []string, logger log.Logger, features Featu
 }
 
 // loadCustomMetricsFile lê e compila um arquivo YAML de custom metrics.
-func loadCustomMetricsFile(path string) ([]customMetric, error) {
+func loadCustomMetricsFile(path string, constLabels prometheus.Labels) ([]customMetric, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -93,7 +98,7 @@ func loadCustomMetricsFile(path string) ([]customMetric, error) {
 
 	out := make([]customMetric, 0, len(names))
 	for _, name := range names {
-		compiled, err := compileCustomMetric(name, raw[name])
+		compiled, err := compileCustomMetric(name, raw[name], constLabels)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +118,7 @@ var (
 )
 
 // compileCustomMetric valida o spec e pré-calcula os Descs.
-func compileCustomMetric(name string, spec metricSpec) (*customMetric, error) {
+func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.Labels) (*customMetric, error) {
 	if strings.TrimSpace(spec.Query) == "" {
 		return nil, fmt.Errorf("métrica %q: campo query é obrigatório", name)
 	}
@@ -207,7 +212,7 @@ func compileCustomMetric(name string, spec metricSpec) (*customMetric, error) {
 		}
 
 		cm.valueCols = append(cm.valueCols, vc.column)
-		cm.descs[vc.column] = prometheus.NewDesc(metricName, help, cm.labelCols, nil)
+		cm.descs[vc.column] = prometheus.NewDesc(metricName, help, cm.labelCols, constLabels)
 		cm.valueKinds[vc.column] = vc.kind
 	}
 

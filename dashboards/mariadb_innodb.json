@@ -1,0 +1,367 @@
+{
+  "title": "MariaDB — InnoDB & Performance",
+  "uid": "mariadb-innodb-performance",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "30s",
+  "tags": ["mariadb", "innodb", "performance"],
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      { "name": "datasource", "type": "datasource", "query": "prometheus" },
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_up, cluster)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_up{cluster=~\"$cluster\"}, environment)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "service_name",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_up{cluster=~\"$cluster\", environment=~\"$environment\"}, service_name)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "title": "Buffer Pool",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 1,
+      "title": "Buffer pool hit ratio",
+      "description": "Fração das leituras atendidas em memória. Abaixo de ~99% em regime estável sugere buffer pool pequeno para o working set.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "(1 - (rate(mariadb_innodb_buffer_pool_reads_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]) / clamp_min(rate(mariadb_innodb_buffer_pool_read_requests_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]), 1))) * 100",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 90,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "orange", "value": 95 },
+              { "color": "green", "value": 99 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Buffer pool — leituras lógicas vs. disco",
+      "description": "read_requests é leitura lógica (memória); reads é o que precisou ir ao disco.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_innodb_buffer_pool_read_requests_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} lógicas/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mariadb_innodb_buffer_pool_reads_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} disco/s",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" } }
+    },
+    {
+      "id": 3,
+      "title": "Páginas do buffer pool por tipo",
+      "description": "free baixo e sustentado indica pressão de memória. dirty alto indica muita escrita pendente de flush.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_innodb_buffer_pool_pages_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", type!=\"total\"}",
+          "legendFormat": "{{service_name}} {{type}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "custom": { "stacking": { "mode": "normal" } } } }
+    },
+    {
+      "id": 4,
+      "title": "Ocupação do buffer pool (%)",
+      "description": "Percentual de páginas em uso (data + dirty + misc) sobre o total.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "(1 - (mariadb_innodb_buffer_pool_pages_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", type=\"free\"} / ignoring(type) clamp_min(mariadb_innodb_buffer_pool_pages_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", type=\"total\"}, 1))) * 100",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+    },
+    {
+      "type": "row",
+      "title": "Locks e Deadlocks",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 5,
+      "title": "Row lock waits",
+      "description": "Operações que tiveram de esperar por lock de linha. Crescimento sustentado indica contenção.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_innodb_row_lock_waits_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 6,
+      "title": "Tempo médio de espera por row lock",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_innodb_row_lock_time_avg_milliseconds{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 7,
+      "title": "Deadlocks acumulados",
+      "description": "Contador de deadlocks detectados pelo InnoDB. Qualquer valor crescente merece investigação da ordem de acesso das transações.",
+      "type": "stat",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_innodb_deadlocks_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 1 },
+              { "color": "red", "value": 10 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "row",
+      "title": "Tabelas temporárias e ordenação",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 8,
+      "title": "Tabelas temporárias: memória vs. disco",
+      "description": "Temporárias em disco são muito mais lentas. Alta proporção sugere revisar tmp_table_size/max_heap_table_size ou as próprias queries.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_created_tmp_tables_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} memória/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mariadb_created_tmp_disk_tables_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} disco/s",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 9,
+      "title": "% de temporárias que foram para disco",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "(rate(mariadb_created_tmp_disk_tables_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]) / clamp_min(rate(mariadb_created_tmp_tables_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]), 0.0001)) * 100",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "orange", "value": 25 },
+              { "color": "red", "value": 50 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Queries problemáticas: full join, full scan, sort merge",
+      "description": "select_full_join sem índice é o pior caso. sort_merge_passes indica ordenação que não caberia em sort_buffer_size.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 35 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_select_full_join_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} full join/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mariadb_select_scan_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} full scan/s",
+          "refId": "B"
+        },
+        {
+          "expr": "rate(mariadb_sort_merge_passes_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} sort merge/s",
+          "refId": "C"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+    {
+      "id": 11,
+      "title": "Cache de tabelas abertas — hit ratio",
+      "description": "Misses altos indicam table_open_cache pequeno para a quantidade de tabelas em uso.",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 35 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "(rate(mariadb_table_open_cache_hits_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]) / clamp_min(rate(mariadb_table_open_cache_hits_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]) + rate(mariadb_table_open_cache_misses_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]), 0.0001)) * 100",
+          "legendFormat": "{{service_name}} hit %",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "min": 0, "max": 100 } }
+    },
+    {
+      "type": "row",
+      "title": "Configuração e recursos",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "id": 12,
+      "title": "Tamanho do buffer pool",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 44 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_innodb_buffer_pool_size_bytes{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+    {
+      "id": 13,
+      "title": "Arquivos abertos",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 6, "x": 6, "y": 44 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_open_files{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 14,
+      "title": "Tabelas abertas",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 6, "x": 12, "y": 44 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_open_tables{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 15,
+      "title": "Tráfego de rede",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 6, "x": 18, "y": 44 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_bytes_received_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} recebido",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(mariadb_bytes_sent_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
+          "legendFormat": "{{service_name}} enviado",
+          "refId": "B"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "Bps" } }
+    }
+  ]
+}

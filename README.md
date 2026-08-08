@@ -193,6 +193,11 @@ CREATE USER 'mariadb_exporter'@'127.0.0.1'
 GRANT SELECT              ON *.* TO 'mariadb_exporter'@'127.0.0.1';
 GRANT PROCESS             ON *.* TO 'mariadb_exporter'@'127.0.0.1';
 GRANT REPLICATION CLIENT  ON *.* TO 'mariadb_exporter'@'127.0.0.1';
+-- SLAVE MONITOR é obrigatório para SHOW ALL SLAVES STATUS a partir do MariaDB
+-- 10.5: REPLICATION CLIENT virou apenas um alias de BINLOG MONITOR e já não
+-- basta. Sem este grant, o coletor replication falha com
+-- "Access denied; you need (at least one of) the SLAVE MONITOR privilege(s)".
+GRANT SLAVE MONITOR       ON *.* TO 'mariadb_exporter'@'127.0.0.1';
 GRANT RELOAD              ON *.* TO 'mariadb_exporter'@'127.0.0.1';
 
 FLUSH PRIVILEGES;
@@ -204,7 +209,8 @@ Para que se usa cada privilégio:
 | --- | --- |
 | `SELECT` | Tabelas de `information_schema` (userstat, QRT, MDL, DISKS) |
 | `PROCESS` | `SHOW ENGINE INNODB STATUS`, `information_schema.PROCESSLIST` |
-| `REPLICATION CLIENT` | `SHOW ALL SLAVES STATUS` |
+| `REPLICATION CLIENT` | Compatibilidade (no MariaDB >= 10.5 é alias de `BINLOG MONITOR`) |
+| `SLAVE MONITOR` | `SHOW ALL SLAVES STATUS` — **obrigatório** no MariaDB >= 10.5 |
 | `RELOAD` | Operações administrativas de flush |
 
 ---
@@ -222,7 +228,7 @@ satisfeita, o coletor **não gera erro** — apenas zero métricas e um aviso no
 | `metadata_locks` | plugin `metadata_lock_info`, MariaDB >= 10.0.7 | `INSTALL SONAME 'metadata_lock_info';` |
 | `disks` | plugin `disks` | `INSTALL SONAME 'disks';` |
 | `galera` | wsrep ativo + `--collector.galera` | cluster Galera em execução |
-| `replication` | `REPLICATION CLIENT` | — |
+| `replication` | `SLAVE MONITOR` (MariaDB >= 10.5) | `GRANT SLAVE MONITOR ON *.* TO ...` |
 
 Para tornar as mudanças permanentes, use o arquivo de configuração do servidor:
 
@@ -435,24 +441,47 @@ PMM_CLUSTER="meu-cluster" \
   sudo -E ./packaging/deploy_mariadb_exporter.sh
 ```
 
-### 4. Dashboard e alertas versionados
+### 4. Dashboards e alertas versionados
 
-- [dashboards/mariadb_overview.json](dashboards/mariadb_overview.json) —
-  dashboard com variáveis de template `cluster`/`environment`/`service_name`,
-  cobrindo disponibilidade, latência (P99 via histograma real), top usuários e
-  tabelas por linhas lidas, índices sem uso, disco e replicação. Importar via
-  PMM UI → Dashboards → Import, ou pela API do Grafana embutido:
+Seis dashboards em [dashboards/](dashboards/), todos com variáveis de template
+`cluster` / `environment` / `service_name` alimentadas pelas flags `--pmm.*`:
 
-  ```bash
+| Dashboard | Cobre |
+| --- | --- |
+| [mariadb_overview.json](dashboards/mariadb_overview.json) | Visão geral da frota: disponibilidade, latência P99, top usuários e tabelas, disco, replicação |
+| [mariadb_innodb.json](dashboards/mariadb_innodb.json) | Buffer pool (hit ratio, ocupação, páginas por tipo), row locks, deadlocks, tmp tables em disco, cache de tabelas, full scans/joins |
+| [mariadb_replication.json](dashboards/mariadb_replication.json) | Threads IO/SQL, atraso, erros, progresso do relay log — com suporte a multi-source via variável `connection_name` |
+| [mariadb_galera.json](dashboards/mariadb_galera.json) | Tamanho do cluster, componente Primary/non-Primary, estado local do nó, flow control, filas send/recv |
+| [mariadb_users.json](dashboards/mariadb_users.json) | Acessos negados, conexões abortadas/perdidas, uso de `max_connections`, perfil de comandos e eficiência de leitura por usuário, tráfego por host de origem |
+| [mariadb_tables.json](dashboards/mariadb_tables.json) | Tabelas mais lidas/escritas, custo de índice na escrita, índices órfãos |
+
+Importar via PMM UI → Dashboards → Import, ou pela API do Grafana embutido:
+
+```bash
+for f in dashboards/mariadb_*.json; do
   curl -k -u admin:admin -X POST https://<pmm-server>/graph/api/dashboards/db \
     -H "Content-Type: application/json" \
-    -d "{\"dashboard\": $(cat dashboards/mariadb_overview.json), \"folderTitle\": \"MariaDB\", \"overwrite\": true}"
-  ```
+    -d "{\"dashboard\": $(cat "$f"), \"folderTitle\": \"MariaDB\", \"overwrite\": true}"
+done
+```
+
+> Os painéis usam `"uid": "${datasource}"` com uma variável de template do tipo
+> `datasource`. No PMM, selecione **Metrics** no seletor no topo do dashboard
+> (é o VictoriaMetrics interno); em um Grafana comum, selecione seu Prometheus.
 
 - [dashboards/mariadb_alerts.yml](dashboards/mariadb_alerts.yml) — 5 regras de
   alerta prontas (instância down, latência P99 alta, replicação atrasada,
   disco quase cheio, acúmulo de metadata locks). Importar via PMM UI →
   Alerting → Alert Rules.
+
+Alguns painéis dependem de pré-requisitos no servidor:
+
+| Dashboard | Depende de |
+| --- | --- |
+| Galera | `--collector.galera` (opt-in) e wsrep ativo |
+| Usuários, Tabelas & Índices | `userstat=ON` |
+| Replicação | `GRANT SLAVE MONITOR` (MariaDB >= 10.5) |
+| Índices órfãos | `--custom-metrics` com `mariadb_orphan_indexes` (ver [custom_metrics/example.yml](custom_metrics/example.yml)) |
 
 ### 5. Verificação pós-registro
 
@@ -547,6 +576,24 @@ SELECT plugin_name, plugin_status FROM information_schema.plugins
  WHERE plugin_name LIKE 'QUERY_RESPONSE%';
 SELECT @@global.query_response_time_stats;
 ```
+
+**`coletor falhou collector=replication ... you need (at least one of) the SLAVE MONITOR privilege(s)`**
+No MariaDB >= 10.5, `GRANT REPLICATION CLIENT` passou a ser apenas um alias de
+`BINLOG MONITOR` e não autoriza mais `SHOW ALL SLAVES STATUS`. Conceda o
+privilégio específico:
+
+```sql
+GRANT SLAVE MONITOR ON *.* TO 'mariadb_exporter'@'127.0.0.1';
+FLUSH PRIVILEGES;
+```
+
+**Painel de índices sem uso sempre vazio**
+Esperado: o `INDEX_STATISTICS` só lista índices que já foram lidos ao menos uma
+vez, então um índice nunca tocado não aparece com `rows_read = 0`. Use a custom
+metric `mariadb_orphan_indexes` de
+[custom_metrics/example.yml](custom_metrics/example.yml), que compara os índices
+declarados com os que registraram leitura. O dashboard
+*Tabelas & Índices* já traz um painel para ela.
 
 **`mariadb_up = 0`**
 Verifique o DSN, o firewall e se o usuário tem permissão de conexão a partir do

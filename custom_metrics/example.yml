@@ -63,3 +63,38 @@ mariadb_longest_transaction_seconds:
     - seconds:
         usage: "GAUGE"
         description: "Duracao da transacao ativa mais antiga em segundos"
+
+# Índices realmente órfãos (nunca lidos desde o último restart).
+#
+# A métrica nativa mariadb_index_unused depende de o índice aparecer em
+# INDEX_STATISTICS com ROWS_READ = 0 — mas o MariaDB só insere ali os índices
+# que já foram lidos ao menos uma vez. Um índice jamais tocado simplesmente não
+# existe naquela tabela, então nunca é detectado.
+#
+# Este LEFT JOIN resolve isso comparando os índices declarados (STATISTICS) com
+# os que registraram leitura (INDEX_STATISTICS). O resultado é a contagem por
+# schema; use o dashboard "Tabelas & Índices" para o detalhe.
+#
+# Atenção: só confie no resultado se o uptime do servidor cobrir um ciclo
+# completo de negócio — um índice usado apenas no fechamento mensal parece
+# órfão se o servidor reiniciou ontem.
+mariadb_orphan_indexes:
+  query: |
+    SELECT s.TABLE_SCHEMA AS schema_name,
+           COUNT(*) AS total
+    FROM information_schema.STATISTICS s
+    LEFT JOIN information_schema.INDEX_STATISTICS i
+      ON  i.TABLE_SCHEMA = s.TABLE_SCHEMA
+      AND i.TABLE_NAME   = s.TABLE_NAME
+      AND i.INDEX_NAME   = s.INDEX_NAME
+    WHERE i.INDEX_NAME IS NULL
+      AND s.INDEX_NAME <> 'PRIMARY'
+      AND s.TABLE_SCHEMA NOT IN ('mysql', 'information_schema', 'performance_schema', 'sys')
+    GROUP BY s.TABLE_SCHEMA
+  metrics:
+    - schema_name:
+        usage: "LABEL"
+        description: "Schema do banco"
+    - total:
+        usage: "GAUGE"
+        description: "Indices declarados que nunca registraram leitura"
