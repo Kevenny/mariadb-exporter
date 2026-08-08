@@ -21,6 +21,7 @@ import (
 	_ "github.com/go-sql-driver/mysql"
 	"github.com/prometheus/client_golang/prometheus"
 	promcollectors "github.com/prometheus/client_golang/prometheus/collectors"
+	toolkitweb "github.com/prometheus/exporter-toolkit/web"
 
 	"github.com/Kevenny/mariadb-exporter/collector"
 	"github.com/Kevenny/mariadb-exporter/config"
@@ -138,7 +139,6 @@ func run() error {
 	})
 
 	server := &http.Server{
-		Addr:              cfg.Web.ListenAddress,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 	}
@@ -147,10 +147,15 @@ func run() error {
 	go func() {
 		_ = level.Info(logger).Log(
 			"msg", "servidor HTTP escutando",
-			"address", cfg.Web.ListenAddress,
+			"addresses", fmt.Sprint(cfg.Web.ListenAddresses()),
 			"telemetry_path", cfg.Web.TelemetryPath,
+			"web_config_file", cfg.Web.WebConfigFile(),
 		)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		// O toolkit cuida do endereço, do TLS e da autenticação a partir de
+		// --web.config.file; sem esse arquivo, o comportamento é HTTP simples,
+		// idêntico ao anterior.
+		if err := toolkitweb.ListenAndServe(server, cfg.Web.ToolkitFlags, logger); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
 			return
 		}

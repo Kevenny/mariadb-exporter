@@ -1,6 +1,8 @@
 package config
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -139,7 +141,8 @@ func TestRegisterDefaults(t *testing.T) {
 	_, err := app.Parse([]string{"--datasource.name=mariadb://u:p@tcp(h:3306)/"})
 	require.NoError(t, err)
 
-	require.Equal(t, ":9104", cfg.Web.ListenAddress)
+	require.Equal(t, []string{":9104"}, cfg.Web.ListenAddresses())
+	require.Empty(t, cfg.Web.WebConfigFile(), "sem --web.config.file, o padrão é HTTP simples")
 	require.Equal(t, "/metrics", cfg.Web.TelemetryPath)
 	require.Equal(t, 0, cfg.Web.MaxRequests)
 
@@ -193,13 +196,108 @@ func TestRegisterFlagOverrides(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, ":9999", cfg.Web.ListenAddress)
+	require.Equal(t, []string{":9999"}, cfg.Web.ListenAddresses())
 	require.True(t, cfg.Collectors.Galera)
 	require.False(t, cfg.Collectors.UserStat)
 	require.Equal(t, 42, cfg.Collectors.TableStatLimit)
 	require.Equal(t, "debug", cfg.Log.Level)
 	require.Equal(t, "json", cfg.Log.Format)
 	require.Equal(t, []string{"a.yml", "b.yml"}, cfg.CustomMetrics)
+}
+
+// O exporter-toolkit permite escutar em vários endereços, repetindo a flag.
+func TestRegisterMultipleListenAddresses(t *testing.T) {
+	app := kingpin.New("teste", "")
+	cfg := Register(app)
+
+	_, err := app.Parse([]string{
+		"--datasource.name=mariadb://u:p@tcp(h:3306)/",
+		"--web.listen-address=127.0.0.1:9104",
+		"--web.listen-address=[::1]:9104",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"127.0.0.1:9104", "[::1]:9104"}, cfg.Web.ListenAddresses())
+}
+
+// --web.config.file é o arquivo que habilita TLS e/ou basic auth.
+func TestRegisterWebConfigFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "web-config.yml")
+	require.NoError(t, os.WriteFile(path, []byte("basic_auth_users: {}\n"), 0o600))
+
+	app := kingpin.New("teste", "")
+	cfg := Register(app)
+
+	_, err := app.Parse([]string{
+		"--datasource.name=mariadb://u:p@tcp(h:3306)/",
+		"--web.config.file=" + path,
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, path, cfg.Web.WebConfigFile())
+	require.NoError(t, cfg.Validate(), "arquivo existente deve passar a validação")
+}
+
+// Um --web.config.file inexistente precisa falhar no startup: subir sem o TLS
+// que o operador pediu daria uma falsa sensação de proteção.
+func TestValidateRejectsMissingWebConfigFile(t *testing.T) {
+	app := kingpin.New("teste", "")
+	cfg := Register(app)
+
+	_, err := app.Parse([]string{
+		"--datasource.name=mariadb://u:p@tcp(h:3306)/",
+		"--web.config.file=" + filepath.Join(t.TempDir(), "nao-existe.yml"),
+	})
+	require.NoError(t, err)
+
+	err = cfg.Validate()
+	require.Error(t, err, "arquivo de config web inexistente deveria abortar o startup")
+	require.Contains(t, err.Error(), "web.config.file")
+}
+
+// O conteúdo do --web.config.file também é validado no startup — antes de abrir
+// o listener. Sem isso, um hash bcrypt inválido só estouraria no primeiro
+// request, com o exporter já escutando sem proteção nesse intervalo.
+func TestValidateRejectsMalformedWebConfigFile(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "web-config.yml")
+	require.NoError(t, os.WriteFile(path,
+		[]byte("basic_auth_users:\n  prometheus: nao-e-um-hash-bcrypt\n"), 0o600))
+
+	app := kingpin.New("teste", "")
+	cfg := Register(app)
+
+	_, err := app.Parse([]string{
+		"--datasource.name=mariadb://u:p@tcp(h:3306)/",
+		"--web.config.file=" + path,
+	})
+	require.NoError(t, err)
+
+	err = cfg.Validate()
+	require.Error(t, err, "hash bcrypt inválido deveria abortar o startup")
+	require.Contains(t, err.Error(), "inválido")
+}
+
+// Um web-config.yml apontando para certificado inexistente deve falhar no
+// startup, não ao aceitar a primeira conexão TLS.
+func TestValidateRejectsWebConfigWithMissingCert(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "web-config.yml")
+	require.NoError(t, os.WriteFile(path, []byte(
+		"tls_server_config:\n"+
+			"  cert_file: "+filepath.Join(dir, "nao-existe.crt")+"\n"+
+			"  key_file: "+filepath.Join(dir, "nao-existe.key")+"\n",
+	), 0o600))
+
+	app := kingpin.New("teste", "")
+	cfg := Register(app)
+
+	_, err := app.Parse([]string{
+		"--datasource.name=mariadb://u:p@tcp(h:3306)/",
+		"--web.config.file=" + path,
+	})
+	require.NoError(t, err)
+
+	require.Error(t, cfg.Validate(), "certificado inexistente deveria abortar o startup")
 }
 
 // As flags --pmm.* alimentam config.PMM, usado para ConstLabels de integração
@@ -284,7 +382,7 @@ func TestRegisterReadsEnv(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "mariadb://env:senha@tcp(envhost:3306)/", cfg.DataSource.Name)
-	require.Equal(t, ":9105", cfg.Web.ListenAddress)
+	require.Equal(t, []string{":9105"}, cfg.Web.ListenAddresses())
 	require.Equal(t, "warn", cfg.Log.Level)
 	require.NoError(t, cfg.Validate())
 }
@@ -302,7 +400,7 @@ func TestFlagOverridesEnv(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, ":9200", cfg.Web.ListenAddress)
+	require.Equal(t, []string{":9200"}, cfg.Web.ListenAddresses())
 }
 
 func TestDSNQueryParams(t *testing.T) {

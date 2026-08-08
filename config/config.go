@@ -10,13 +10,39 @@ import (
 	"time"
 
 	"github.com/alecthomas/kingpin/v2"
+	"github.com/prometheus/exporter-toolkit/web"
+	"github.com/prometheus/exporter-toolkit/web/kingpinflag"
 )
 
 // Web agrupa as configurações do servidor HTTP.
+//
+// O endereço de escuta, o arquivo de configuração de TLS/autenticação e o
+// socket activation do systemd ficam em ToolkitFlags, gerenciados pelo
+// exporter-toolkit da Prometheus — é ele quem implementa TLS e basic auth a
+// partir de --web.config.file.
 type Web struct {
-	ListenAddress string
 	TelemetryPath string
 	MaxRequests   int
+
+	// ToolkitFlags carrega --web.listen-address (repetível),
+	// --web.config.file e --web.systemd-socket.
+	ToolkitFlags *web.FlagConfig
+}
+
+// ListenAddresses devolve os endereços de escuta configurados, para logging.
+func (w Web) ListenAddresses() []string {
+	if w.ToolkitFlags == nil || w.ToolkitFlags.WebListenAddresses == nil {
+		return nil
+	}
+	return *w.ToolkitFlags.WebListenAddresses
+}
+
+// WebConfigFile devolve o caminho do arquivo de TLS/auth, ou string vazia.
+func (w Web) WebConfigFile() string {
+	if w.ToolkitFlags == nil || w.ToolkitFlags.WebConfigFile == nil {
+		return ""
+	}
+	return *w.ToolkitFlags.WebConfigFile
 }
 
 // DataSource agrupa as configurações de conexão com o MariaDB.
@@ -126,9 +152,10 @@ func envDefault(fallback string, keys ...string) string {
 func Register(app *kingpin.Application) *Config {
 	cfg := &Config{}
 
-	app.Flag("web.listen-address", "Endereço e porta onde o exporter escuta.").
-		Default(envDefault(":9104", "MARIADB_WEB_LISTEN_ADDRESS")).
-		StringVar(&cfg.Web.ListenAddress)
+	// O toolkit registra --web.listen-address (repetível), --web.config.file e,
+	// no Linux, --web.systemd-socket. É ele quem implementa TLS e basic auth.
+	cfg.Web.ToolkitFlags = kingpinflag.AddFlags(app, envDefault(":9104", "MARIADB_WEB_LISTEN_ADDRESS"))
+
 	app.Flag("web.telemetry-path", "Path sob o qual as métricas são expostas.").
 		Default(envDefault("/metrics", "MARIADB_WEB_TELEMETRY_PATH")).
 		StringVar(&cfg.Web.TelemetryPath)
@@ -217,6 +244,20 @@ func (c *Config) Validate() error {
 	}
 	if c.Collectors.IndexStatLimit < 0 {
 		return fmt.Errorf("--collector.indexstat.limit não pode ser negativo")
+	}
+	// Um --web.config.file inexistente, ilegível ou inválido é falha de
+	// configuração: melhor abortar no startup do que subir sem o
+	// TLS/autenticação que o operador pediu, achando que o endpoint está
+	// protegido. A validação do conteúdo é feita pelo próprio toolkit, e
+	// acontece aqui — antes de abrir o listener — para que o exporter não fique
+	// nem um instante escutando desprotegido.
+	if path := c.Web.WebConfigFile(); path != "" {
+		if _, err := os.Stat(path); err != nil {
+			return fmt.Errorf("--web.config.file %q inacessível: %w", path, err)
+		}
+		if err := web.Validate(path); err != nil {
+			return fmt.Errorf("--web.config.file %q inválido: %w", path, err)
+		}
 	}
 	return nil
 }

@@ -27,6 +27,8 @@
 #   PMM_CLUSTER         --pmm.cluster (default: vazio — sem agrupamento)
 #   PMM_ENV             --pmm.environment (default: production)
 #   PMM_REPLICATION_SET --pmm.replication-set (default: vazio)
+#   WEB_CONFIG_FILE     --web.config.file para TLS/basic auth (default: vazio =
+#                       HTTP sem autenticação). Ver packaging/web-config.yml.example
 
 set -euo pipefail
 
@@ -36,6 +38,7 @@ EXPORTER_PORT="${EXPORTER_PORT:-9104}"
 PMM_CLUSTER="${PMM_CLUSTER:-}"
 PMM_ENV="${PMM_ENV:-production}"
 PMM_REPLICATION_SET="${PMM_REPLICATION_SET:-}"
+WEB_CONFIG_FILE="${WEB_CONFIG_FILE:-}"
 MARIADB_DSN="${MARIADB_DSN:?defina MARIADB_DSN antes de executar este script}"
 
 SERVICE_NAME="mariadb-$(hostname -s)"
@@ -87,6 +90,28 @@ if [[ -n "$PMM_REPLICATION_SET" ]]; then
     PMM_ARGS="${PMM_ARGS} --pmm.replication-set=\"${PMM_REPLICATION_SET}\""
 fi
 
+# TLS/basic auth são opt-in via WEB_CONFIG_FILE. Quando ativos, o exporter passa
+# a servir HTTPS, então tanto o health check local quanto o registro no PMM
+# precisam usar o scheme correto.
+WEB_ARGS=""
+SCHEME="http"
+CURL_TLS_OPT=""
+if [[ -n "$WEB_CONFIG_FILE" ]]; then
+    if [[ ! -r "$WEB_CONFIG_FILE" ]]; then
+        echo "WEB_CONFIG_FILE=$WEB_CONFIG_FILE não existe ou não é legível" >&2
+        exit 1
+    fi
+    WEB_ARGS="--web.config.file=\"${WEB_CONFIG_FILE}\""
+    # Só assume HTTPS se o arquivo realmente configurar TLS: o mesmo arquivo pode
+    # habilitar apenas basic auth, mantendo HTTP.
+    if grep -qE "^[[:space:]]*tls_server_config:" "$WEB_CONFIG_FILE"; then
+        SCHEME="https"
+        # O certificado pode ser autoassinado; a verificação fica a cargo de quem
+        # faz o scrape, não deste health check local.
+        CURL_TLS_OPT="-k"
+    fi
+fi
+
 # 6. Criar unit systemd
 cat > /etc/systemd/system/mariadb_exporter.service <<EOF
 [Unit]
@@ -102,6 +127,7 @@ EnvironmentFile=/etc/mariadb_exporter/mariadb_exporter.env
 ExecStart=/usr/local/bin/mariadb_exporter \\
   --web.listen-address=":${EXPORTER_PORT}" \\
   --web.telemetry-path="/metrics" \\
+  ${WEB_ARGS} \\
   ${PMM_ARGS} \\
   --log.level=info \\
   --log.format=json
@@ -122,13 +148,26 @@ systemctl restart mariadb_exporter
 
 # 8. Verificar saúde antes de registrar no PMM — evita um "Connection check
 # failed" no pmm-admin quando o exporter ainda não subiu.
+#
+# Com basic auth habilitado, o /health também exige credencial (o toolkit não
+# permite excluir paths), então um 401 aqui indica que o exporter está no ar e
+# respondendo — o que é suficiente para seguir com o registro.
 sleep 2
-if ! curl -sf "http://localhost:${EXPORTER_PORT}/health" >/dev/null; then
-    echo "exporter não respondeu em /health; abortando registro no PMM" >&2
-    systemctl status mariadb_exporter --no-pager || true
-    exit 1
-fi
-echo "exporter saudável em :${EXPORTER_PORT}"
+HEALTH_CODE=$(curl -s ${CURL_TLS_OPT} -o /dev/null -w "%{http_code}" \
+    "${SCHEME}://localhost:${EXPORTER_PORT}/health" || echo "000")
+case "$HEALTH_CODE" in
+    200)
+        echo "exporter saudável em ${SCHEME}://:${EXPORTER_PORT}"
+        ;;
+    401)
+        echo "exporter no ar em ${SCHEME}://:${EXPORTER_PORT} (401 — basic auth ativo, esperado)"
+        ;;
+    *)
+        echo "exporter não respondeu em /health (HTTP ${HEALTH_CODE}); abortando registro no PMM" >&2
+        systemctl status mariadb_exporter --no-pager || true
+        exit 1
+        ;;
+esac
 
 # 9. Registrar no PMM (idempotente: se o serviço já existir, o pmm-admin avisa
 # e o script não deve falhar por isso).
@@ -136,7 +175,7 @@ PMM_REGISTER_ARGS=(
     --service-name="${SERVICE_NAME}"
     --listen-port="${EXPORTER_PORT}"
     --metrics-path="/metrics"
-    --scheme=http
+    --scheme="${SCHEME}"
     --group=mariadb
     --environment="${PMM_ENV}"
 )
@@ -146,6 +185,12 @@ PMM_REGISTER_ARGS=(
 if command -v pmm-admin &>/dev/null; then
     pmm-admin add external "${PMM_REGISTER_ARGS[@]}" || \
         echo "aviso: pmm-admin add external falhou (talvez o serviço já exista) — verifique com 'pmm-admin list'" >&2
+
+    if [[ -n "$WEB_CONFIG_FILE" ]] && grep -qE "^[[:space:]]*basic_auth_users:" "$WEB_CONFIG_FILE"; then
+        echo "ATENÇÃO: basic auth está ativo, mas 'pmm-admin add external' não aceita credenciais." >&2
+        echo "         Configure usuário e senha no serviço pelo PMM UI (Inventory > o serviço)," >&2
+        echo "         senão o scrape falhará com 401." >&2
+    fi
 else
     echo "aviso: pmm-admin não encontrado neste host; pulei o registro no PMM" >&2
 fi

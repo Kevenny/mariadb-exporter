@@ -115,7 +115,9 @@ mariadb://@tcp(localhost:3306)/?readTimeout=30s
 
 | Flag | Padrão | Descrição |
 | --- | --- | --- |
-| `--web.listen-address` | `:9104` | Endereço e porta de escuta |
+| `--web.listen-address` | `:9104` | Endereço e porta de escuta (**repetível** para vários endereços) |
+| `--web.config.file` | — | Arquivo YAML com TLS e/ou basic auth (ver [Segurança](#segurança)) |
+| `--web.systemd-socket` | `false` | Usa socket activation do systemd em vez de abrir a porta (Linux) |
 | `--web.telemetry-path` | `/metrics` | Path das métricas |
 | `--web.max-requests` | `0` | Máximo de scrapes simultâneos (0 = ilimitado) |
 | `--datasource.name` | env `MARIADB_DSN` | DSN de conexão |
@@ -474,7 +476,8 @@ curl -s http://localhost:9104/metrics | grep -E "^mariadb_up|^mariadb_info"
 | `GET /` | Página de índice com links |
 
 O `/health` é adequado para health check de load balancer, Kubernetes probe ou
-`healthcheck` do Docker.
+`healthcheck` do Docker. Se você habilitar basic auth via `--web.config.file`, a
+sonda precisará enviar a credencial (ver [Segurança](#segurança)).
 
 ---
 
@@ -563,10 +566,66 @@ em instâncias com muitas tabelas (`--no-collector.tablestat`).
 
 ## Segurança
 
-### Endpoints não têm autenticação
+### TLS e autenticação (`--web.config.file`)
 
-`/metrics`, `/health` e `/` são servidos sem autenticação — é o comportamento
-padrão de exporters Prometheus. Consequências práticas:
+Por padrão `/metrics`, `/health` e `/` são servidos em **HTTP sem autenticação**
+— o comportamento padrão de exporters Prometheus. Para habilitar HTTPS e/ou
+basic auth, aponte `--web.config.file` para um arquivo YAML:
+
+```bash
+mariadb_exporter --web.config.file=/etc/mariadb_exporter/web-config.yml
+```
+
+```yaml
+# /etc/mariadb_exporter/web-config.yml  (0640 root:mariadb_exporter)
+
+# Senhas como hash bcrypt. Gere com: htpasswd -nBC 10 "" | tr -d ':\n'
+basic_auth_users:
+  prometheus: $2a$10$YlKXKGr6Zy0o67vkjDv4MOLwG/2vXPCq1ZayOB55cQJqevY3fbfRu
+
+tls_server_config:
+  cert_file: /etc/mariadb_exporter/tls/exporter.crt
+  key_file:  /etc/mariadb_exporter/tls/exporter.key
+  min_version: TLS12
+```
+
+Modelo completo e comentado, incluindo mTLS: veja
+[packaging/web-config.yml.example](packaging/web-config.yml.example). O formato
+é o do
+[exporter-toolkit](https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md)
+da Prometheus.
+
+O arquivo é validado **no startup**, antes de abrir o listener: um hash bcrypt
+malformado ou um certificado inexistente aborta o processo com erro claro, em
+vez de deixar o exporter escutando desprotegido até o primeiro request.
+
+Ao habilitar TLS, ajuste quem faz o scrape:
+
+```bash
+# PMM
+pmm-admin add external --scheme=https ...
+```
+
+```yaml
+# Prometheus
+scrape_configs:
+  - job_name: 'mariadb'
+    scheme: https
+    basic_auth:
+      username: prometheus
+      password: senha_do_prometheus
+    tls_config:
+      ca_file: /etc/prometheus/tls/ca.crt   # se o cert for autoassinado
+    static_configs:
+      - targets: ['mariadb-host01:9104']
+```
+
+> **O basic auth vale para todos os paths, inclusive `/health`.** O toolkit não
+> permite excluir um path. Se você usa `/health` como probe de load balancer,
+> Kubernetes ou Docker, a sonda precisa enviar a credencial — ou então deixe a
+> autenticação de fora e proteja o exporter por rede.
+
+### Se você não usar TLS/auth
 
 - **Exponha o exporter apenas na rede de monitoramento.** Prefira
   `--web.listen-address=127.0.0.1:9104` quando o pmm-agent roda no mesmo host,
