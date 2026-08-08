@@ -1,0 +1,65 @@
+# Exemplo de custom metrics para o mariadb_exporter.
+#
+# Uso:
+#   mariadb_exporter --custom-metrics=/etc/mariadb_exporter/example.yml
+#
+# Vários arquivos podem ser combinados repetindo a flag:
+#   --custom-metrics=a.yml --custom-metrics=b.yml
+#
+# Regras:
+#   - A chave do bloco é o nome da métrica exposta.
+#   - `query` é o SQL executado a cada scrape (mantenha-o barato).
+#   - Cada coluna do result set precisa estar declarada em `metrics` com um
+#     `usage`: LABEL, COUNTER ou GAUGE.
+#   - Com mais de uma coluna de valor, o nome da coluna é sufixado ao nome da
+#     métrica (ex: mariadb_custom_io_reads, mariadb_custom_io_writes).
+
+mariadb_active_sessions_by_schema:
+  query: |
+    SELECT db AS schema_name,
+           command,
+           COUNT(*) AS total
+    FROM information_schema.PROCESSLIST
+    WHERE db IS NOT NULL
+    GROUP BY db, command
+  metrics:
+    - schema_name:
+        usage: "LABEL"
+        description: "Schema do banco"
+    - command:
+        usage: "LABEL"
+        description: "Tipo de comando"
+    - total:
+        usage: "GAUGE"
+        description: "Total de sessoes ativas por schema e comando"
+
+# Tamanho de dados e índices por schema — útil para acompanhar crescimento.
+mariadb_schema_size_bytes:
+  query: |
+    SELECT table_schema AS schema_name,
+           COALESCE(SUM(data_length), 0)  AS data_bytes,
+           COALESCE(SUM(index_length), 0) AS index_bytes
+    FROM information_schema.TABLES
+    WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')
+    GROUP BY table_schema
+  metrics:
+    - schema_name:
+        usage: "LABEL"
+        description: "Schema do banco"
+    - data_bytes:
+        usage: "GAUGE"
+        description: "Bytes ocupados por dados no schema"
+    - index_bytes:
+        usage: "GAUGE"
+        description: "Bytes ocupados por indices no schema"
+
+# Transações mais antigas em execução: detecta transações longas que seguram
+# undo log e metadata locks.
+mariadb_longest_transaction_seconds:
+  query: |
+    SELECT COALESCE(MAX(TIMESTAMPDIFF(SECOND, trx_started, NOW())), 0) AS seconds
+    FROM information_schema.INNODB_TRX
+  metrics:
+    - seconds:
+        usage: "GAUGE"
+        description: "Duracao da transacao ativa mais antiga em segundos"

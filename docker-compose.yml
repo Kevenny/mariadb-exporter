@@ -1,0 +1,52 @@
+# Ambiente de desenvolvimento local: MariaDB 11.4 com os plugins exclusivos
+# habilitados + o exporter apontado para ele.
+#
+#   docker compose up -d --build
+#   curl localhost:9104/metrics
+#   curl localhost:9104/health
+
+services:
+  mariadb:
+    image: mariadb:11.4
+    container_name: mariadb_exporter_dev_db
+    environment:
+      MARIADB_ROOT_PASSWORD: root
+      MARIADB_DATABASE: demo
+    ports:
+      - "3306:3306"
+    command:
+      # userstat alimenta os coletores userstat, tablestat, indexstat e clientstat.
+      - --userstat=1
+      # O plugin de tempo de resposta precisa ser carregado e ligado.
+      - --plugin-load-add=query_response_time
+      - --query-response-time-stats=ON
+      - --plugin-load-add=metadata_lock_info
+      - --plugin-load-add=disks
+      - --performance-schema=ON
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - mariadb_data:/var/lib/mysql
+
+  exporter:
+    build:
+      context: .
+      args:
+        VERSION: dev
+    container_name: mariadb_exporter_dev
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    environment:
+      MARIADB_DSN: "mariadb://root:root@tcp(mariadb:3306)/"
+      MARIADB_LOG_LEVEL: debug
+    ports:
+      - "9104:9104"
+    command:
+      - --collector.galera
+
+volumes:
+  mariadb_data:

@@ -1,0 +1,31 @@
+# /etc/systemd/system/mariadb_exporter.service
+[Unit]
+Description=MariaDB Exporter for Prometheus
+Documentation=https://github.com/Kevenny/mariadb-exporter
+After=network.target mariadb.service
+Wants=mariadb.service
+
+[Service]
+Type=simple
+User=mariadb_exporter
+Group=mariadb_exporter
+EnvironmentFile=-/etc/mariadb_exporter/mariadb_exporter.env
+ExecStart=/usr/local/bin/mariadb_exporter \
+  --web.listen-address=":9104" \
+  --log.level=info
+Restart=on-failure
+RestartSec=5s
+
+# Hardening: o exporter só precisa de rede e leitura da própria configuração.
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=yes
+LockPersonality=yes
+
+[Install]
+WantedBy=multi-user.target
