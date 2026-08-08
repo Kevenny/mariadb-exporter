@@ -1,0 +1,211 @@
+{
+  "title": "MariaDB Overview (mariadb_exporter)",
+  "uid": "mariadb-exporter-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-15m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "cluster",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_up, cluster)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "environment",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_up{cluster=~\"$cluster\"}, environment)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "service_name",
+        "type": "query",
+        "datasource": { "type": "prometheus", "uid": "${datasource}" },
+        "query": "label_values(mariadb_up{cluster=~\"$cluster\", environment=~\"$environment\"}, service_name)",
+        "includeAll": true,
+        "multi": true,
+        "refresh": 2
+      },
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Instâncias UP",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "sum(mariadb_up{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"})", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "title": "Instâncias DOWN",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "count(mariadb_up{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"} == 0)", "refId": "A" }],
+      "fieldConfig": { "defaults": { "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 1 }] } } }
+    },
+    {
+      "id": 3,
+      "title": "mariadb_up por instância",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [{ "expr": "mariadb_up{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}", "format": "table", "instant": true, "refId": "A" }]
+    },
+    {
+      "id": 4,
+      "title": "Connections por instância",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "rate(mariadb_connections_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[1m])", "legendFormat": "{{service_name}} connections/s", "refId": "A" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Questions / Slow queries por instância",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        { "expr": "rate(mariadb_questions_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[1m])", "legendFormat": "{{service_name}} questions/s", "refId": "A" },
+        { "expr": "rate(mariadb_slow_queries_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[1m])", "legendFormat": "{{service_name}} slow/s", "refId": "B" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Latência média (ms) — sum/count do histograma QRT",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "rate(mariadb_query_response_time_seconds_sum{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]) / rate(mariadb_query_response_time_seconds_count{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]) * 1000",
+          "legendFormat": "{{service_name}} avg ms",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms" } }
+    },
+    {
+      "id": 7,
+      "title": "P99 de latência (histograma real)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, service_name) (rate(mariadb_query_response_time_seconds_bucket{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])))",
+          "legendFormat": "{{service_name}} p99",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 8,
+      "title": "Top 10 usuários por linhas lidas",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "topk(10, rate(mariadb_user_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "title": "Top 10 tabelas por linhas lidas",
+      "type": "table",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "topk(10, rate(mariadb_table_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m]))",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "title": "Índices sem uso por instância",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "count by (service_name) (mariadb_index_unused{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"} == 1)",
+          "format": "table",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 11,
+      "title": "Uso de disco (%) por instância",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 30 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_disk_used_bytes{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"} / mariadb_disk_total_bytes{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"} * 100",
+          "legendFormat": "{{service_name}} {{path}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percent", "max": 100, "min": 0 } }
+    },
+    {
+      "id": 12,
+      "title": "Replicação — atraso (seconds_behind_master)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "mariadb_slave_seconds_behind_master{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}",
+          "legendFormat": "{{service_name}} {{connection_name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 13,
+      "title": "Metadata locks ativos",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 36 },
+      "datasource": { "type": "prometheus", "uid": "${datasource}" },
+      "targets": [
+        {
+          "expr": "sum by (service_name) (mariadb_metadata_locks_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"})",
+          "legendFormat": "{{service_name}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}

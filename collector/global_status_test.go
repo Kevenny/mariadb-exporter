@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/require"
 )
 
@@ -141,7 +142,7 @@ func TestInfoCollector(t *testing.T) {
 
 	mock.ExpectQuery("SELECT VERSION\\(\\)").WillReturnRows(rows)
 
-	c := NewInfoCollector(testLogger(), allFeatures())
+	c := NewInfoCollector(testLogger(), allFeatures(), nil)
 	require.True(t, c.Enabled(), "o coletor info não pode ser desabilitado")
 
 	metrics, err := runCollect(t, c, db)
@@ -157,5 +158,42 @@ func TestInfoCollector(t *testing.T) {
 	})
 
 	require.Equal(t, float64(1), info.Value, "info metric deve valer sempre 1")
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// Com ConstLabels de integração PMM informadas, elas devem aparecer em toda
+// linha de mariadb_info além dos quatro labels dinâmicos normais (seção 3 de
+// mariadb_exporter_pmm_integration.md).
+func TestInfoCollectorWithPMMConstLabels(t *testing.T) {
+	db, mock := newMockDB(t)
+
+	rows := sqlmock.NewRows([]string{"VERSION()", "version_comment", "hostname", "server_id"}).
+		AddRow("11.4.3-MariaDB", "MariaDB Server", "db-host01", "1")
+
+	mock.ExpectQuery("SELECT VERSION\\(\\)").WillReturnRows(rows)
+
+	constLabels := prometheus.Labels{
+		"service_name": "mariadb-host01",
+		"cluster":      "prod-cluster",
+		"environment":  "production",
+	}
+	c := NewInfoCollector(testLogger(), allFeatures(), constLabels)
+
+	metrics, err := runCollect(t, c, db)
+	require.NoError(t, err)
+	require.Len(t, metrics, 1)
+
+	snaps := snapshot(t, metrics)
+	info := requireMetric(t, snaps, "mariadb_info", map[string]string{
+		"version":         "11.4.3-MariaDB",
+		"version_comment": "MariaDB Server",
+		"hostname":        "db-host01",
+		"server_id":       "1",
+		"service_name":    "mariadb-host01",
+		"cluster":         "prod-cluster",
+		"environment":     "production",
+	})
+
+	require.Equal(t, float64(1), info.Value)
 	require.NoError(t, mock.ExpectationsWereMet())
 }

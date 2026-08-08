@@ -1,0 +1,111 @@
+{
+  "title": "MariaDB Exporter — Overview",
+  "uid": "mariadb-exporter-overview",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "refresh": "10s",
+  "time": { "from": "now-15m", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Exporter up",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
+      "targets": [{ "expr": "mariadb_up", "refId": "A" }],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "DOWN", "color": "red" }, "1": { "text": "UP", "color": "green" } } }
+          ],
+          "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 }] }
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Scrape success",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
+      "targets": [{ "expr": "mariadb_scrape_success", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "title": "Uptime",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 0 },
+      "targets": [{ "expr": "mariadb_uptime_seconds", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 4,
+      "title": "Connections",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        { "expr": "rate(mariadb_connections_total[1m])", "legendFormat": "connections/s", "refId": "A" },
+        { "expr": "mariadb_max_used_connections", "legendFormat": "max used", "refId": "B" }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Questions / Slow queries",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        { "expr": "rate(mariadb_questions_total[1m])", "legendFormat": "questions/s", "refId": "A" },
+        { "expr": "rate(mariadb_slow_queries_total[1m])", "legendFormat": "slow queries/s", "refId": "B" }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Userstat — Rows read/sent by user",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        { "expr": "rate(mariadb_user_rows_read_total[1m])", "legendFormat": "{{user}} read/s", "refId": "A" },
+        { "expr": "rate(mariadb_user_rows_sent_total[1m])", "legendFormat": "{{user}} sent/s", "refId": "B" }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Query Response Time (p50/p95/p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        { "expr": "histogram_quantile(0.50, rate(mariadb_query_response_time_seconds_bucket[1m]))", "legendFormat": "p50", "refId": "A" },
+        { "expr": "histogram_quantile(0.95, rate(mariadb_query_response_time_seconds_bucket[1m]))", "legendFormat": "p95", "refId": "B" },
+        { "expr": "histogram_quantile(0.99, rate(mariadb_query_response_time_seconds_bucket[1m]))", "legendFormat": "p99", "refId": "C" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 8,
+      "title": "Unused indexes",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 20 },
+      "targets": [{ "expr": "mariadb_index_unused", "format": "table", "instant": true, "refId": "A" }]
+    },
+    {
+      "id": 9,
+      "title": "InnoDB buffer pool pages",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 20 },
+      "targets": [{ "expr": "mariadb_innodb_buffer_pool_pages_total", "legendFormat": "{{type}}", "refId": "A" }]
+    },
+    {
+      "id": 10,
+      "title": "Collector availability",
+      "type": "table",
+      "gridPos": { "h": 6, "w": 12, "x": 0, "y": 26 },
+      "targets": [{ "expr": "mariadb_collector_available", "format": "table", "instant": true, "refId": "A" }]
+    },
+    {
+      "id": 11,
+      "title": "Scrape duration by collector",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 12, "x": 12, "y": 26 },
+      "targets": [{ "expr": "mariadb_collector_scrape_duration_seconds", "legendFormat": "{{collector}}", "refId": "A" }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    }
+  ]
+}

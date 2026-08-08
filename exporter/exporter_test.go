@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/Kevenny/mariadb-exporter/collector"
+	"github.com/Kevenny/mariadb-exporter/config"
 )
 
 // fakeCollector é um coletor controlável, usado para exercitar a orquestração
@@ -54,13 +55,18 @@ func (f *fakeCollector) Collect(_ context.Context, _ *sql.DB, ch chan<- promethe
 
 func newTestExporter(t *testing.T, collectors []collector.Collector) (*Exporter, sqlmock.Sqlmock) {
 	t.Helper()
+	return newTestExporterWithPMM(t, collectors, config.PMM{})
+}
+
+func newTestExporterWithPMM(t *testing.T, collectors []collector.Collector, pmm config.PMM) (*Exporter, sqlmock.Sqlmock) {
+	t.Helper()
 
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp), sqlmock.MonitorPingsOption(true))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = db.Close() })
 
 	detector := NewFeatureDetector(db, ParseVersion("11.4.3-MariaDB", ""), log.NewNopLogger())
-	return New(db, collectors, detector, log.NewNopLogger()), mock
+	return New(db, collectors, detector, pmm, log.NewNopLogger()), mock
 }
 
 // gather coleta as métricas do exporter através de um registry real.
@@ -248,7 +254,7 @@ func TestExporterPing(t *testing.T) {
 }
 
 func TestBuildInfoCollector(t *testing.T) {
-	c := BuildInfoCollector("1.2.3", "2026-08-07T00:00:00Z", "go1.22.0")
+	c := BuildInfoCollector("1.2.3", "2026-08-07T00:00:00Z", "go1.22.0", config.PMM{})
 
 	expected := `
 # HELP mariadb_exporter_build_info Informações de build do mariadb_exporter.
@@ -256,4 +262,59 @@ func TestBuildInfoCollector(t *testing.T) {
 mariadb_exporter_build_info{build_date="2026-08-07T00:00:00Z",go_version="go1.22.0",version="1.2.3"} 1
 `
 	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(expected)))
+}
+
+// Com metadados de PMM informados, eles devem aparecer como ConstLabels em
+// mariadb_exporter_build_info (mariadb_exporter_pmm_integration.md, seção 3).
+func TestBuildInfoCollectorWithPMMConstLabels(t *testing.T) {
+	pmm := config.PMM{ServiceName: "mariadb-host01", Cluster: "prod-cluster", Environment: "production"}
+	c := BuildInfoCollector("1.2.3", "2026-08-07T00:00:00Z", "go1.22.0", pmm)
+
+	expected := `
+# HELP mariadb_exporter_build_info Informações de build do mariadb_exporter.
+# TYPE mariadb_exporter_build_info gauge
+mariadb_exporter_build_info{build_date="2026-08-07T00:00:00Z",cluster="prod-cluster",environment="production",go_version="go1.22.0",service_name="mariadb-host01",version="1.2.3"} 1
+`
+	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(expected)))
+}
+
+// As métricas internas do exporter (mariadb_up, scrape_success, etc.) também
+// devem carregar as ConstLabels de PMM quando configuradas.
+func TestExporterConstLabelsFromPMM(t *testing.T) {
+	pmm := config.PMM{ServiceName: "mariadb-host01", Cluster: "prod-cluster", Environment: "production"}
+	e, mock := newTestExporterWithPMM(t, nil, pmm)
+	mock.ExpectPing()
+
+	families := gather(t, e)
+
+	up, ok := labeledValue(families, "mariadb_up", "cluster", "prod-cluster")
+	require.True(t, ok, "mariadb_up deveria carregar o label cluster")
+	require.Equal(t, float64(1), up)
+
+	_, ok = labeledValue(families, "mariadb_up", "service_name", "mariadb-host01")
+	require.True(t, ok, "mariadb_up deveria carregar o label service_name")
+
+	_, ok = labeledValue(families, "mariadb_up", "environment", "production")
+	require.True(t, ok, "mariadb_up deveria carregar o label environment")
+}
+
+// Sem configuração de PMM, os labels de cluster/service_name/environment não
+// devem aparecer — instalações sem PMM não devem ganhar labels vazios à toa.
+func TestExporterNoConstLabelsWithoutPMM(t *testing.T) {
+	e, mock := newTestExporter(t, nil)
+	mock.ExpectPing()
+
+	families := gather(t, e)
+
+	for _, f := range families {
+		if f.GetName() != "mariadb_up" {
+			continue
+		}
+		for _, m := range f.GetMetric() {
+			for _, lp := range m.GetLabel() {
+				require.NotEqual(t, "cluster", lp.GetName(), "não deveria haver label cluster sem --pmm.cluster")
+				require.NotEqual(t, "service_name", lp.GetName(), "não deveria haver label service_name sem --pmm.service-name")
+			}
+		}
+	}
 }

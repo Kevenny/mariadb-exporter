@@ -1,0 +1,65 @@
+# mariadb_alerts.yml
+#
+# Regras de alerta para o mariadb_exporter, no formato de regras do Prometheus
+# (mariadb_exporter_pmm_integration.md, seção 10).
+#
+# Importar via PMM UI → Alerting → Alert Rules → + New Alert Rule, ou carregar
+# como regra do próprio Prometheus/VictoriaMetrics se o exporter for usado fora
+# do PMM (ver docker-compose.dev.yml para o ambiente de teste local).
+#
+# Os labels service_name/cluster/environment usados em $labels dependem das
+# flags --pmm.service-name, --pmm.cluster e --pmm.environment estarem
+# configuradas no exporter (ver seção 3 do documento de integração); sem elas,
+# as anotações ficam vazias mas os alertas continuam funcionando normalmente.
+
+groups:
+  - name: mariadb_availability
+    rules:
+      - alert: MariaDBDown
+        expr: mariadb_up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Instância MariaDB indisponível"
+          description: "{{ $labels.service_name }} está offline há mais de 1 minuto."
+
+      - alert: MariaDBHighLatency
+        expr: |
+          histogram_quantile(0.99,
+            rate(mariadb_query_response_time_seconds_bucket[5m])
+          ) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Latência P99 acima de 1s"
+          description: "{{ $labels.service_name }} com P99={{ $value }}s nos últimos 5 minutos."
+
+      - alert: MariaDBReplicationLag
+        expr: mariadb_slave_seconds_behind_master > 60
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Atraso de replicação alto"
+          description: "{{ $labels.service_name }} com atraso de {{ $value }}s."
+
+      - alert: MariaDBDiskAlmostFull
+        expr: |
+          (mariadb_disk_used_bytes / mariadb_disk_total_bytes) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Disco do MariaDB acima de 85%"
+          description: "{{ $labels.service_name }} — path={{ $labels.path }} em {{ $value | humanizePercentage }}."
+
+      - alert: MariaDBMetadataLockAccumulation
+        expr: mariadb_metadata_locks_total > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Muitos MDL locks ativos"
+          description: "{{ $labels.service_name }} com {{ $value }} metadata locks ativos."

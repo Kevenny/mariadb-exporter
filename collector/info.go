@@ -19,11 +19,21 @@ type InfoCollector struct {
 
 // NewInfoCollector cria o coletor info. Ele não recebe flag de habilitação
 // porque, por especificação, não pode ser desabilitado.
-func NewInfoCollector(logger log.Logger, features FeatureProvider) *InfoCollector {
+//
+// constLabels traz os metadados de integração com o PMM (service_name, cluster,
+// environment, replication_set — ver mariadb_exporter_pmm_integration.md, seção
+// 3). São ConstLabels, não labels dinâmicos: diferem dos quatro labels normais
+// de mariadb_info por não variarem por linha de resultado, apenas por instância
+// do exporter.
+func NewInfoCollector(logger log.Logger, features FeatureProvider, constLabels prometheus.Labels) *InfoCollector {
 	return &InfoCollector{
 		base: newBase("info", "Informações de versão e identificação da instância MariaDB.", true, logger, features),
-		desc: newDesc("", "info", "Informações da instância MariaDB; o valor é sempre 1.",
-			[]string{"version", "version_comment", "hostname", "server_id"}),
+		desc: prometheus.NewDesc(
+			prometheus.BuildFQName(Namespace, "", "info"),
+			"Informações da instância MariaDB; o valor é sempre 1.",
+			[]string{"version", "version_comment", "hostname", "server_id"},
+			constLabels,
+		),
 	}
 }
 

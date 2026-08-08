@@ -118,12 +118,12 @@ func run() error {
 	}
 	_ = level.Info(logger).Log("msg", "coletores habilitados", "lista", fmt.Sprint(enabledNames(collectors)))
 
-	exp := exporter.New(db, collectors, detector, logger)
+	exp := exporter.New(db, collectors, detector, cfg.PMM, logger)
 
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
 		exp,
-		exporter.BuildInfoCollector(version, buildDate, runtime.Version()),
+		exporter.BuildInfoCollector(version, buildDate, runtime.Version(), cfg.PMM),
 		promcollectors.NewGoCollector(),
 		promcollectors.NewProcessCollector(promcollectors.ProcessCollectorOpts{}),
 	)
@@ -204,7 +204,7 @@ func buildCollectors(cfg *config.Config, logger log.Logger, detector *exporter.F
 	registry := collector.NewRegistry()
 
 	registry.Register(
-		collector.NewInfoCollector(logger, detector),
+		collector.NewInfoCollector(logger, detector, cfg.PMM.ConstLabels()),
 		collector.NewGlobalStatusCollector(cfg.Collectors.GlobalStatus, logger, detector),
 		collector.NewGlobalVariablesCollector(cfg.Collectors.GlobalVariables, logger, detector),
 		collector.NewUserStatCollector(cfg.Collectors.UserStat, logger, detector),

@@ -11,6 +11,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/Kevenny/mariadb-exporter/collector"
+	"github.com/Kevenny/mariadb-exporter/config"
 )
 
 // collectorTimeout é o teto de tempo por coletor (seção 5, item 3).
@@ -33,8 +34,12 @@ type Exporter struct {
 	collectorAvail    *prometheus.Desc
 }
 
-// New cria o exporter com os coletores informados.
-func New(db *sql.DB, collectors []collector.Collector, detector *FeatureDetector, logger log.Logger) *Exporter {
+// New cria o exporter com os coletores informados. Os metadados em pmm viram
+// ConstLabels nas métricas internas, permitindo que os filtros de cluster e
+// ambiente do PMM funcionem nos dashboards.
+func New(db *sql.DB, collectors []collector.Collector, detector *FeatureDetector, pmm config.PMM, logger log.Logger) *Exporter {
+	constLabels := prometheus.Labels(pmm.ConstLabels())
+
 	e := &Exporter{
 		db:         db,
 		collectors: collectors,
@@ -42,36 +47,40 @@ func New(db *sql.DB, collectors []collector.Collector, detector *FeatureDetector
 		logger:     logger,
 
 		scrapeDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
-			Namespace: collector.Namespace,
-			Name:      "scrape_duration_seconds",
-			Help:      "Duração total do scrape do mariadb_exporter em segundos.",
-			Buckets:   []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
+			Namespace:   collector.Namespace,
+			Name:        "scrape_duration_seconds",
+			Help:        "Duração total do scrape do mariadb_exporter em segundos.",
+			Buckets:     []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
+			ConstLabels: constLabels,
 		}),
 		scrapeSuccess: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: collector.Namespace,
-			Name:      "scrape_success",
-			Help:      "1 se o último scrape rodou sem erros em nenhum coletor, 0 caso contrário.",
+			Namespace:   collector.Namespace,
+			Name:        "scrape_success",
+			Help:        "1 se o último scrape rodou sem erros em nenhum coletor, 0 caso contrário.",
+			ConstLabels: constLabels,
 		}),
 		scrapeErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
-			Namespace: collector.Namespace,
-			Name:      "scrape_errors_total",
-			Help:      "Total de erros de scrape por coletor.",
+			Namespace:   collector.Namespace,
+			Name:        "scrape_errors_total",
+			Help:        "Total de erros de scrape por coletor.",
+			ConstLabels: constLabels,
 		}, []string{"collector"}),
 		up: prometheus.NewGauge(prometheus.GaugeOpts{
-			Namespace: collector.Namespace,
-			Name:      "up",
-			Help:      "1 se o exporter está conectado ao MariaDB, 0 caso contrário.",
+			Namespace:   collector.Namespace,
+			Name:        "up",
+			Help:        "1 se o exporter está conectado ao MariaDB, 0 caso contrário.",
+			ConstLabels: constLabels,
 		}),
 
 		collectorDuration: prometheus.NewDesc(
 			prometheus.BuildFQName(collector.Namespace, "collector", "scrape_duration_seconds"),
 			"Duração do scrape de cada coletor em segundos.",
-			[]string{"collector"}, nil,
+			[]string{"collector"}, constLabels,
 		),
 		collectorAvail: prometheus.NewDesc(
 			prometheus.BuildFQName(collector.Namespace, "collector", "available"),
 			"1 se as dependências do coletor (plugin/variável) estão satisfeitas, 0 caso contrário.",
-			[]string{"collector"}, nil,
+			[]string{"collector"}, constLabels,
 		),
 	}
 
@@ -192,13 +201,15 @@ func (e *Exporter) Ping(ctx context.Context) error {
 	return e.db.PingContext(ctx)
 }
 
-// BuildInfoCollector devolve a métrica mariadb_exporter_build_info (seção 16).
-func BuildInfoCollector(version, buildDate, goVersion string) prometheus.Collector {
+// BuildInfoCollector devolve a métrica mariadb_exporter_build_info (seção 16),
+// com os metadados do PMM aplicados como ConstLabels.
+func BuildInfoCollector(version, buildDate, goVersion string, pmm config.PMM) prometheus.Collector {
 	g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
-		Namespace: collector.Namespace,
-		Subsystem: "exporter",
-		Name:      "build_info",
-		Help:      "Informações de build do mariadb_exporter.",
+		Namespace:   collector.Namespace,
+		Subsystem:   "exporter",
+		Name:        "build_info",
+		Help:        "Informações de build do mariadb_exporter.",
+		ConstLabels: prometheus.Labels(pmm.ConstLabels()),
 	}, []string{"version", "build_date", "go_version"})
 	g.WithLabelValues(version, buildDate, goVersion).Set(1)
 	return g

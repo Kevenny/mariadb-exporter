@@ -136,9 +136,20 @@ mariadb://@tcp(localhost:3306)/?readTimeout=30s
 | `--collector.global_status` | `true` | Coletor `global_status` |
 | `--collector.global_variables` | `true` | Coletor `global_variables` |
 | `--custom-metrics` | — | Arquivo YAML de custom metrics (repetível) |
+| `--pmm.service-name` | `$(hostname)-mariadb` | Nome do serviço no PMM inventory |
+| `--pmm.cluster` | — | Nome do cluster para agrupamento no PMM |
+| `--pmm.environment` | `production` | Ambiente (production, staging, dev) |
+| `--pmm.replication-set` | — | Nome do replication set no PMM (opcional) |
 | `--log.level` | `info` | `debug`, `info`, `warn`, `error` |
 | `--log.format` | `text` | `text` ou `json` |
 | `--version` | — | Mostra a versão e sai |
+
+As flags `--pmm.*` populam ConstLabels (`service_name`, `cluster`, `environment`,
+`replication_set`) em `mariadb_info`, `mariadb_up` e nas demais métricas internas
+do exporter — são o que permite os dashboards do PMM filtrarem por essas
+dimensões. Campos não informados simplesmente não geram label (nenhuma métrica
+ganha um label vazio). Veja [Integração com PMM](#integração-com-pmm) para o
+fluxo completo.
 
 Qualquer coletor pode ser desligado com o prefixo `--no-`, por exemplo
 `--no-collector.tablestat`.
@@ -156,6 +167,10 @@ As flags de `--web.*` e `--datasource.*` também leem do ambiente:
 | `MARIADB_DATASOURCE_MAX_OPEN` | `--datasource.max-open` |
 | `MARIADB_DATASOURCE_MAX_IDLE` | `--datasource.max-idle` |
 | `MARIADB_DATASOURCE_TIMEOUT` | `--datasource.timeout` |
+| `MARIADB_PMM_SERVICE_NAME` | `--pmm.service-name` |
+| `MARIADB_PMM_CLUSTER` | `--pmm.cluster` |
+| `MARIADB_PMM_ENVIRONMENT` | `--pmm.environment` |
+| `MARIADB_PMM_REPLICATION_SET` | `--pmm.replication-set` |
 | `MARIADB_LOG_LEVEL` | `--log.level` |
 | `MARIADB_LOG_FORMAT` | `--log.format` |
 
@@ -365,21 +380,86 @@ Veja [custom_metrics/example.yml](custom_metrics/example.yml) para mais exemplos
 
 ## Integração com PMM
 
-O exporter é registrado no PMM como **External Service**:
+Documentação completa e detalhada em
+[mariadb_exporter_pmm_integration.md](mariadb_exporter_pmm_integration.md).
+Resumo do fluxo:
+
+```
+mariadb_exporter (:9104) → pull do pmm-agent → VictoriaMetrics (PMM) → Grafana
+```
+
+O PMM não aceita datasources externos arbitrários — internamente ele é sempre
+VictoriaMetrics. O que se registra é um **target de scrape** (External
+Service); o exporter nunca envia métricas, apenas aguarda o pull.
+
+### 1. Configurar as flags `--pmm.*`
+
+```bash
+mariadb_exporter \
+  --pmm.service-name="mariadb-$(hostname -s)" \
+  --pmm.cluster="meu-cluster" \
+  --pmm.environment=production
+```
+
+Isso faz `mariadb_info`, `mariadb_up` e as demais métricas internas carregarem
+os labels `service_name`, `cluster` e `environment`, usados pelos filtros dos
+dashboards.
+
+### 2. Registrar como External Service
 
 ```bash
 pmm-admin add external \
-  --service-name=mariadb-01 \
+  --service-name="mariadb-$(hostname -s)" \
   --listen-port=9104 \
+  --metrics-path=/metrics \
+  --scheme=http \
   --group=mariadb \
   --environment=production \
   --cluster=meu-cluster
 ```
 
-Para conferir se o PMM está coletando:
+Conferir: `pmm-admin list | grep mariadb` deve mostrar o serviço com status UP.
+
+### 3. Deploy automatizado
+
+[packaging/deploy_mariadb_exporter.sh](packaging/deploy_mariadb_exporter.sh)
+automatiza os passos 1 e 2 num host novo — instala o binário, cria o serviço
+systemd com as flags `--pmm.*` já preenchidas e registra no PMM:
 
 ```bash
-pmm-admin list | grep mariadb
+MARIADB_DSN="mariadb://mariadb_exporter:SENHA@tcp(localhost:3306)/" \
+PMM_CLUSTER="meu-cluster" \
+  sudo -E ./packaging/deploy_mariadb_exporter.sh
+```
+
+### 4. Dashboard e alertas versionados
+
+- [dashboards/mariadb_overview.json](dashboards/mariadb_overview.json) —
+  dashboard com variáveis de template `cluster`/`environment`/`service_name`,
+  cobrindo disponibilidade, latência (P99 via histograma real), top usuários e
+  tabelas por linhas lidas, índices sem uso, disco e replicação. Importar via
+  PMM UI → Dashboards → Import, ou pela API do Grafana embutido:
+
+  ```bash
+  curl -k -u admin:admin -X POST https://<pmm-server>/graph/api/dashboards/db \
+    -H "Content-Type: application/json" \
+    -d "{\"dashboard\": $(cat dashboards/mariadb_overview.json), \"folderTitle\": \"MariaDB\", \"overwrite\": true}"
+  ```
+
+- [dashboards/mariadb_alerts.yml](dashboards/mariadb_alerts.yml) — 5 regras de
+  alerta prontas (instância down, latência P99 alta, replicação atrasada,
+  disco quase cheio, acúmulo de metadata locks). Importar via PMM UI →
+  Alerting → Alert Rules.
+
+### 5. Verificação pós-registro
+
+```bash
+# Métricas chegando com os labels do PMM
+curl -s http://localhost:9104/metrics | grep -E "^mariadb_up|^mariadb_info"
+
+# No Grafana do PMM: Dashboards → Advanced Data Exploration
+# Datasource: Prometheus (VictoriaMetrics interno)
+# Filtrar por: service_name, cluster, environment
 ```
 
 ---

@@ -51,13 +51,62 @@ type Log struct {
 	Format string
 }
 
+// PMM agrupa os metadados usados para popular ConstLabels quando o exporter é
+// integrado ao Percona PMM como External Service (ver
+// mariadb_exporter_pmm_integration.md, seção 3). Esses labels permitem que os
+// filtros de cluster/ambiente/serviço funcionem nos dashboards do PMM.
+type PMM struct {
+	ServiceName    string
+	Cluster        string
+	Environment    string
+	ReplicationSet string
+}
+
 // Config é a configuração completa do exporter.
 type Config struct {
 	Web           Web
 	DataSource    DataSource
 	Collectors    Collectors
 	Log           Log
+	PMM           PMM
 	CustomMetrics []string
+}
+
+// defaultServiceName monta o valor padrão de --pmm.service-name a partir do
+// hostname da máquina. Se o hostname não puder ser obtido, cai para um valor
+// fixo em vez de deixar a flag sem default.
+func defaultServiceName() string {
+	host, err := os.Hostname()
+	if err != nil || strings.TrimSpace(host) == "" {
+		return "mariadb"
+	}
+	return host + "-mariadb"
+}
+
+// ConstLabels monta as prometheus.Labels correspondentes aos metadados de
+// integração com o PMM (mariadb_exporter_pmm_integration.md, seção 3), prontas
+// para uso em ConstLabels de métricas. Campos vazios são omitidos: nem toda
+// instalação roda atrás de um PMM, e um label vazio poluiria a série à toa.
+//
+// O tipo de retorno é map[string]string em vez de prometheus.Labels para não
+// acoplar este pacote de configuração à biblioteca do Prometheus —
+// prometheus.Labels já é definido como esse mesmo tipo, então o valor serve
+// diretamente onde ConstLabels é esperado.
+func (p PMM) ConstLabels() map[string]string {
+	labels := map[string]string{}
+	if p.ServiceName != "" {
+		labels["service_name"] = p.ServiceName
+	}
+	if p.Cluster != "" {
+		labels["cluster"] = p.Cluster
+	}
+	if p.Environment != "" {
+		labels["environment"] = p.Environment
+	}
+	if p.ReplicationSet != "" {
+		labels["replication_set"] = p.ReplicationSet
+	}
+	return labels
 }
 
 // envDefault retorna o valor da primeira variável de ambiente definida entre as
@@ -131,6 +180,19 @@ func Register(app *kingpin.Application) *Config {
 
 	app.Flag("custom-metrics", "Arquivo YAML de custom metrics (repetível).").
 		PlaceHolder("ARQUIVO").StringsVar(&cfg.CustomMetrics)
+
+	app.Flag("pmm.service-name", "Nome do serviço no PMM inventory.").
+		Default(envDefault(defaultServiceName(), "MARIADB_PMM_SERVICE_NAME")).
+		StringVar(&cfg.PMM.ServiceName)
+	app.Flag("pmm.cluster", "Nome do cluster para agrupamento no PMM.").
+		Default(envDefault("", "MARIADB_PMM_CLUSTER")).
+		StringVar(&cfg.PMM.Cluster)
+	app.Flag("pmm.environment", "Ambiente para agrupamento no PMM (production, staging, dev).").
+		Default(envDefault("production", "MARIADB_PMM_ENVIRONMENT")).
+		StringVar(&cfg.PMM.Environment)
+	app.Flag("pmm.replication-set", "Nome do replication set no PMM (opcional).").
+		Default(envDefault("", "MARIADB_PMM_REPLICATION_SET")).
+		StringVar(&cfg.PMM.ReplicationSet)
 
 	app.Flag("log.level", "Log level: debug, info, warn, error.").
 		Default(envDefault("info", "MARIADB_LOG_LEVEL")).

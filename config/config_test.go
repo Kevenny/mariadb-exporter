@@ -166,6 +166,14 @@ func TestRegisterDefaults(t *testing.T) {
 
 	require.Equal(t, "info", cfg.Log.Level)
 	require.Equal(t, "text", cfg.Log.Format)
+
+	// --pmm.service-name tem default derivado do hostname (nunca vazio) e
+	// --pmm.environment tem default "production"; cluster e replication-set
+	// ficam vazios até serem explicitamente configurados.
+	require.NotEmpty(t, cfg.PMM.ServiceName)
+	require.Equal(t, "production", cfg.PMM.Environment)
+	require.Empty(t, cfg.PMM.Cluster)
+	require.Empty(t, cfg.PMM.ReplicationSet)
 }
 
 func TestRegisterFlagOverrides(t *testing.T) {
@@ -192,6 +200,75 @@ func TestRegisterFlagOverrides(t *testing.T) {
 	require.Equal(t, "debug", cfg.Log.Level)
 	require.Equal(t, "json", cfg.Log.Format)
 	require.Equal(t, []string{"a.yml", "b.yml"}, cfg.CustomMetrics)
+}
+
+// As flags --pmm.* alimentam config.PMM, usado para ConstLabels de integração
+// com o PMM (mariadb_exporter_pmm_integration.md, seção 3).
+func TestRegisterPMMFlags(t *testing.T) {
+	app := kingpin.New("teste", "")
+	cfg := Register(app)
+
+	_, err := app.Parse([]string{
+		"--datasource.name=mariadb://u:p@tcp(h:3306)/",
+		"--pmm.service-name=mariadb-host01",
+		"--pmm.cluster=prod-cluster",
+		"--pmm.environment=staging",
+		"--pmm.replication-set=mariadb-11-4-primary",
+	})
+	require.NoError(t, err)
+
+	require.Equal(t, "mariadb-host01", cfg.PMM.ServiceName)
+	require.Equal(t, "prod-cluster", cfg.PMM.Cluster)
+	require.Equal(t, "staging", cfg.PMM.Environment)
+	require.Equal(t, "mariadb-11-4-primary", cfg.PMM.ReplicationSet)
+}
+
+// As flags --pmm.* também aceitam variáveis de ambiente, no mesmo padrão das
+// demais flags do exporter.
+func TestRegisterPMMFlagsFromEnv(t *testing.T) {
+	t.Setenv("MARIADB_PMM_SERVICE_NAME", "mariadb-env-host")
+	t.Setenv("MARIADB_PMM_CLUSTER", "env-cluster")
+	t.Setenv("MARIADB_PMM_ENVIRONMENT", "dev")
+	t.Setenv("MARIADB_PMM_REPLICATION_SET", "env-repl-set")
+
+	app := kingpin.New("teste", "")
+	cfg := Register(app)
+
+	_, err := app.Parse([]string{"--datasource.name=mariadb://u:p@tcp(h:3306)/"})
+	require.NoError(t, err)
+
+	require.Equal(t, "mariadb-env-host", cfg.PMM.ServiceName)
+	require.Equal(t, "env-cluster", cfg.PMM.Cluster)
+	require.Equal(t, "dev", cfg.PMM.Environment)
+	require.Equal(t, "env-repl-set", cfg.PMM.ReplicationSet)
+}
+
+// PMM.ConstLabels() só inclui os campos preenchidos, para não poluir séries em
+// instalações que não usam PMM.
+func TestPMMConstLabels(t *testing.T) {
+	t.Run("todos os campos", func(t *testing.T) {
+		pmm := PMM{
+			ServiceName:    "mariadb-host01",
+			Cluster:        "prod-cluster",
+			Environment:    "production",
+			ReplicationSet: "mariadb-11-4-primary",
+		}
+		require.Equal(t, map[string]string{
+			"service_name":    "mariadb-host01",
+			"cluster":         "prod-cluster",
+			"environment":     "production",
+			"replication_set": "mariadb-11-4-primary",
+		}, pmm.ConstLabels())
+	})
+
+	t.Run("zero value nao gera labels", func(t *testing.T) {
+		require.Empty(t, PMM{}.ConstLabels())
+	})
+
+	t.Run("campos parciais", func(t *testing.T) {
+		pmm := PMM{ServiceName: "mariadb-host01"}
+		require.Equal(t, map[string]string{"service_name": "mariadb-host01"}, pmm.ConstLabels())
+	})
 }
 
 // As flags de web e datasource também aceitam variáveis de ambiente (seção 6).

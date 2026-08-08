@@ -259,7 +259,7 @@ func TestParseFloat(t *testing.T) {
 func TestRegistryEnabled(t *testing.T) {
 	r := NewRegistry()
 	r.Register(
-		NewInfoCollector(testLogger(), noFeatures()),
+		NewInfoCollector(testLogger(), noFeatures(), nil),
 		NewGaleraCollector(false, testLogger(), noFeatures()),
 		NewInnoDBCollector(true, testLogger(), noFeatures()),
 		nil, // valores nil são ignorados
