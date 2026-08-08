@@ -98,13 +98,15 @@ func (c *MetadataLocksCollector) Collect(ctx context.Context, db *sql.DB, ch cha
 	for k, v := range totals {
 		ch <- prometheus.MustNewConstMetric(
 			c.total, prometheus.GaugeValue, v,
-			k.mode, k.lockType, k.schema, k.table,
+			sanitizeLabel(k.mode), sanitizeLabel(k.lockType),
+			sanitizeLabel(k.schema), sanitizeLabel(k.table),
 		)
 	}
 	for k, v := range waits {
 		ch <- prometheus.MustNewConstMetric(
 			c.waiting, prometheus.GaugeValue, v,
-			k.mode, k.lockType, k.schema, k.table,
+			sanitizeLabel(k.mode), sanitizeLabel(k.lockType),
+			sanitizeLabel(k.schema), sanitizeLabel(k.table),
 		)
 	}
 

@@ -47,7 +47,8 @@ func (c *InfoCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prome
 
 	ch <- prometheus.MustNewConstMetric(
 		c.desc, prometheus.GaugeValue, 1,
-		version.String, comment.String, hostname.String, serverID.String,
+		sanitizeLabel(version.String), sanitizeLabel(comment.String),
+		sanitizeLabel(hostname.String), sanitizeLabel(serverID.String),
 	)
 	return nil
 }

@@ -83,7 +83,10 @@ func (c *IndexStatCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- 
 		// mariadb_index_unused é emitida apenas para índices sem leitura, com
 		// valor fixo 1 — funciona como um marcador para alertas de índice morto.
 		if rowsRead.Valid && rowsRead.Float64 == 0 {
-			ch <- prometheus.MustNewConstMetric(c.unused, prometheus.GaugeValue, 1, s, t, i)
+			ch <- prometheus.MustNewConstMetric(
+				c.unused, prometheus.GaugeValue, 1,
+				sanitizeLabel(s), sanitizeLabel(t), sanitizeLabel(i),
+			)
 		}
 	}
 

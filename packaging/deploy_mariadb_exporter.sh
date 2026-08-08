@@ -13,6 +13,12 @@
 #   MARIADB_DSN="mariadb://mariadb_exporter:SENHA@tcp(localhost:3306)/" \
 #     ./packaging/deploy_mariadb_exporter.sh
 #
+# Nota de segurança: o DSN chega por variável de ambiente e fica visível em
+# /proc/<pid>/environ enquanto o script roda, além de entrar no histórico do
+# shell. Em ambientes compartilhados, prefira exportar a variável de um arquivo
+# com permissão restrita (`set -a; . /root/.mariadb_dsn; set +a`) ou usar um
+# gerenciador de segredos, em vez de digitar a senha na linha de comando.
+#
 # Variáveis de ambiente aceitas (todas opcionais exceto MARIADB_DSN):
 #   MARIADB_DSN        DSN de conexão do exporter (obrigatória)
 #   EXPORTER_VERSION    Versão exibida em logs (default: dev)
@@ -59,12 +65,17 @@ mkdir -p /etc/mariadb_exporter
 chmod 750 /etc/mariadb_exporter
 chown root:"$EXPORTER_USER" /etc/mariadb_exporter
 
-# 4. Criar arquivo de ambiente com o DSN
-cat > /etc/mariadb_exporter/mariadb_exporter.env <<EOF
+# 4. Criar arquivo de ambiente com o DSN.
+#
+# O arquivo contém a senha do usuário de monitoramento, então é criado já com a
+# permissão restrita: um `cat >` seguido de chmod deixaria uma janela em que o
+# arquivo fica legível conforme o umask (tipicamente 644), tempo suficiente para
+# outro processo local ler a credencial.
+ENV_FILE=/etc/mariadb_exporter/mariadb_exporter.env
+install -o root -g "$EXPORTER_USER" -m 0640 /dev/null "$ENV_FILE"
+cat > "$ENV_FILE" <<EOF
 MARIADB_DSN=${MARIADB_DSN}
 EOF
-chmod 640 /etc/mariadb_exporter/mariadb_exporter.env
-chown root:"$EXPORTER_USER" /etc/mariadb_exporter/mariadb_exporter.env
 
 # 5. Montar os argumentos de PMM condicionalmente — cluster e replication-set
 # são opcionais e não devem virar flags vazias no ExecStart.

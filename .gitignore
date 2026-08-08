@@ -1,4 +1,7 @@
 bin/
 coverage.out
 coverage.html
+cover
+cover.*
 *.exe
+*.test

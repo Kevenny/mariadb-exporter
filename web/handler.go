@@ -75,11 +75,14 @@ func healthHandler(pinger Pinger, logger log.Logger) http.HandlerFunc {
 		defer cancel()
 
 		if err := pinger.Ping(ctx); err != nil {
+			// O detalhe do erro fica só no log: /health não tem autenticação, e
+			// a mensagem do driver pode conter o DSN inteiro (com senha) ou
+			// revelar endereços e portas da rede interna.
 			_ = level.Warn(logger).Log("msg", "health check falhou", "err", err)
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status":  "error",
-				"message": err.Error(),
+				"message": "banco de dados inacessível; consulte os logs do exporter",
 			})
 			return
 		}

@@ -53,7 +53,11 @@ func TestHealthEndpointOK(t *testing.T) {
 	require.Equal(t, "ok", body["status"])
 }
 
-// Desconectado: 503 com status error e mensagem.
+// Desconectado: 503 com status error e mensagem genérica.
+//
+// A mensagem é deliberadamente genérica: /health não tem autenticação, e o erro
+// do driver pode conter o DSN (com senha) ou endereços da rede interna. O
+// detalhe fica no log do exporter.
 func TestHealthEndpointUnavailable(t *testing.T) {
 	h := newTestHandler(t, fakePinger{err: errors.New("connection refused")})
 
@@ -65,7 +69,9 @@ func TestHealthEndpointUnavailable(t *testing.T) {
 	var body map[string]string
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
 	require.Equal(t, "error", body["status"])
-	require.Contains(t, body["message"], "connection refused")
+	require.NotEmpty(t, body["message"])
+	require.NotContains(t, body["message"], "connection refused",
+		"o erro do driver não deve aparecer na resposta pública")
 }
 
 func TestHealthEndpointNilPinger(t *testing.T) {

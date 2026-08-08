@@ -29,6 +29,7 @@ O que o `mysqld_exporter` não entrega e este exporter sim:
 - [Custom metrics](#custom-metrics)
 - [Integração com PMM](#integração-com-pmm)
 - [Endpoints](#endpoints)
+- [Segurança](#segurança)
 - [Desenvolvimento](#desenvolvimento)
 - [Troubleshooting](#troubleshooting)
 
@@ -557,6 +558,50 @@ Reduza os limites: `--collector.tablestat.limit=100`,
 **Timeout nos scrapes**
 Aumente `--datasource.timeout` e considere desabilitar os coletores mais caros
 em instâncias com muitas tabelas (`--no-collector.tablestat`).
+
+---
+
+## Segurança
+
+### Endpoints não têm autenticação
+
+`/metrics`, `/health` e `/` são servidos sem autenticação — é o comportamento
+padrão de exporters Prometheus. Consequências práticas:
+
+- **Exponha o exporter apenas na rede de monitoramento.** Prefira
+  `--web.listen-address=127.0.0.1:9104` quando o pmm-agent roda no mesmo host,
+  ou restrinja por firewall/security group.
+- As métricas revelam nomes de usuário, schema, tabela e índice do banco. Não é
+  conteúdo de dados, mas é informação de estrutura — trate como sensível.
+- O `/health` devolve uma mensagem genérica em caso de falha, deliberadamente: o
+  erro do driver pode conter o DSN (com senha) ou endereços internos. O detalhe
+  vai apenas para o log do exporter.
+
+### Credenciais
+
+- A senha nunca é logada: o DSN passa por mascaramento antes de qualquer log.
+- O `EnvironmentFile` do systemd contém a senha e deve ser `0640 root:<serviço>`
+  (o script de deploy já cria assim, sem janela de permissão aberta).
+- Prefira um usuário MariaDB dedicado com os privilégios mínimos da seção
+  [Usuário de monitoramento](#usuário-de-monitoramento) e
+  `MAX_USER_CONNECTIONS 5`.
+
+### Robustez contra dados hostis do servidor
+
+O exporter trata o conteúdo vindo do banco como não confiável:
+
+- Labels com bytes que não formam UTF-8 válido (nomes em latin1, blobs) são
+  sanitizados. Sem isso, o `client_golang` entraria em pânico e derrubaria o
+  processo inteiro durante um scrape.
+- Valores não finitos (`NaN`, `Inf`) são recusados em vez de expostos como
+  métrica, pois quebram alertas e gráficos silenciosamente.
+- Contagens fora de faixa no histograma de `query_response_time` são descartadas,
+  evitando wrap de `uint64` que corromperia todas as queries de taxa.
+- Um pânico dentro de um coletor é isolado àquele coletor, contabilizado em
+  `mariadb_scrape_errors_total` — os demais coletores continuam funcionando.
+- O YAML de custom metrics é validado no startup (nomes de métrica e label,
+  colunas duplicadas ou ambíguas), transformando o que seria um pânico em runtime
+  numa falha de configuração explícita.
 
 ---
 

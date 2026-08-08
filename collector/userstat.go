@@ -119,11 +119,14 @@ func (c *UserStatCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- p
 
 // emitCounter envia um counter apenas se o valor não for NULL. Valores NULL são
 // omitidos em vez de virarem zero, para não inventar dado que o servidor não deu.
+//
+// Os labels passam por sanitizeLabels: valores vindos do banco podem não ser
+// UTF-8 válido e fariam o client_golang entrar em pânico, derrubando o exporter.
 func emitCounter(ch chan<- prometheus.Metric, desc *prometheus.Desc, v sql.NullFloat64, labels ...string) {
 	if !v.Valid {
 		return
 	}
-	ch <- prometheus.MustNewConstMetric(desc, prometheus.CounterValue, v.Float64, labels...)
+	ch <- prometheus.MustNewConstMetric(desc, prometheus.CounterValue, v.Float64, sanitizeLabels(labels)...)
 }
 
 // emitGauge envia um gauge apenas se o valor não for NULL.
@@ -131,5 +134,5 @@ func emitGauge(ch chan<- prometheus.Metric, desc *prometheus.Desc, v sql.NullFlo
 	if !v.Valid {
 		return
 	}
-	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, v.Float64, labels...)
+	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, v.Float64, sanitizeLabels(labels)...)
 }

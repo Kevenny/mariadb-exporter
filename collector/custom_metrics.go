@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -102,6 +103,15 @@ func loadCustomMetricsFile(path string) ([]customMetric, error) {
 	return out, nil
 }
 
+// metricNameRe e labelNameRe são as gramáticas de nome do Prometheus. Um nome
+// fora delas faz o client_golang entrar em pânico ao construir a métrica, o que
+// derrubaria o exporter em runtime — por isso a validação acontece no load, onde
+// o erro é apenas uma falha de configuração no startup.
+var (
+	metricNameRe = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
+	labelNameRe  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
+)
+
 // compileCustomMetric valida o spec e pré-calcula os Descs.
 func compileCustomMetric(name string, spec metricSpec) (*customMetric, error) {
 	if strings.TrimSpace(spec.Query) == "" {
@@ -109,6 +119,12 @@ func compileCustomMetric(name string, spec metricSpec) (*customMetric, error) {
 	}
 	if len(spec.Metrics) == 0 {
 		return nil, fmt.Errorf("métrica %q: campo metrics é obrigatório", name)
+	}
+	if !metricNameRe.MatchString(name) {
+		return nil, fmt.Errorf(
+			"métrica %q: nome inválido para o Prometheus (use apenas letras, dígitos, _ e :, começando por letra, _ ou :)",
+			name,
+		)
 	}
 
 	cm := &customMetric{
@@ -127,10 +143,31 @@ func compileCustomMetric(name string, spec metricSpec) (*customMetric, error) {
 	}
 	var valueCols []valueCol
 
+	// Uma coluna só pode ter um papel: repetida como LABEL geraria labels
+	// duplicados no Desc (pânico no client_golang), e declarada como LABEL e
+	// valor ao mesmo tempo seria ambígua.
+	seen := make(map[string]string)
+
 	for _, entry := range spec.Metrics {
 		for column, colSpec := range entry {
-			switch strings.ToUpper(strings.TrimSpace(colSpec.Usage)) {
+			usage := strings.ToUpper(strings.TrimSpace(colSpec.Usage))
+
+			if previous, dup := seen[column]; dup {
+				return nil, fmt.Errorf(
+					"métrica %q: coluna %q declarada mais de uma vez (como %s e %s)",
+					name, column, previous, usage,
+				)
+			}
+			seen[column] = usage
+
+			switch usage {
 			case usageLabel:
+				if !labelNameRe.MatchString(column) {
+					return nil, fmt.Errorf(
+						"métrica %q: %q não é um nome de label válido para o Prometheus (use apenas letras, dígitos e _, começando por letra ou _)",
+						name, column,
+					)
+				}
 				cm.labelCols = append(cm.labelCols, column)
 			case usageCounter:
 				valueCols = append(valueCols, valueCol{column, colSpec.Description, prometheus.CounterValue})
@@ -160,6 +197,13 @@ func compileCustomMetric(name string, spec metricSpec) (*customMetric, error) {
 		metricName := name
 		if len(valueCols) > 1 {
 			metricName = name + "_" + vc.column
+			// O sufixo entra no nome final, então precisa manter o nome válido.
+			if !metricNameRe.MatchString(metricName) {
+				return nil, fmt.Errorf(
+					"métrica %q: a coluna %q gera o nome inválido %q para o Prometheus",
+					name, vc.column, metricName,
+				)
+			}
 		}
 
 		cm.valueCols = append(cm.valueCols, vc.column)
@@ -223,9 +267,12 @@ func (c *CustomMetricsCollector) collectOne(ctx context.Context, db *sql.DB, ch 
 			return err
 		}
 
+		// Colunas de label podem conter qualquer coisa — inclusive blobs
+		// binários, dependendo da query do operador. Sanitizar evita o pânico do
+		// client_golang em labels que não são UTF-8 válido.
 		labelValues := make([]string, 0, len(cm.labelCols))
 		for _, col := range cm.labelCols {
-			labelValues = append(labelValues, string(values[index[strings.ToLower(col)]]))
+			labelValues = append(labelValues, sanitizeLabel(string(values[index[strings.ToLower(col)]])))
 		}
 
 		for _, col := range cm.valueCols {

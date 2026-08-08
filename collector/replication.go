@@ -121,7 +121,7 @@ func emitBool(ch chan<- prometheus.Metric, desc *prometheus.Desc, raw string, la
 		return
 	}
 
-	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, labels...)
+	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, sanitizeLabels(labels)...)
 }
 
 // emitNumeric envia o valor se ele for numérico; strings vazias e NULL são
@@ -137,5 +137,5 @@ func emitNumeric(ch chan<- prometheus.Metric, desc *prometheus.Desc, raw string,
 		return
 	}
 
-	ch <- prometheus.MustNewConstMetric(desc, kind, v, labels...)
+	ch <- prometheus.MustNewConstMetric(desc, kind, v, sanitizeLabels(labels)...)
 }

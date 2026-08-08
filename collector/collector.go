@@ -6,9 +6,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
@@ -158,6 +160,47 @@ func newDesc(subsystem, name, help string, labels []string) *prometheus.Desc {
 	)
 }
 
+// utf8Replacement substitui cada byte inválido em um label. O caractere de
+// substituição do Unicode deixa evidente no dashboard que o dado de origem está
+// corrompido, em vez de escondê-lo.
+const utf8Replacement = "�"
+
+// sanitizeLabel garante que o valor possa ser usado como label do Prometheus.
+//
+// O client_golang entra em pânico ao construir uma métrica cujo label não é
+// UTF-8 válido, e um pânico dentro do Collect derruba o processo inteiro do
+// exporter. Isso é perfeitamente alcançável em produção: nomes de usuário,
+// schema, tabela ou índice gravados em latin1, ou um blob binário numa coluna
+// usada como label em custom metrics. Trocar os bytes inválidos preserva a
+// métrica e mantém o exporter no ar.
+func sanitizeLabel(value string) string {
+	if utf8.ValidString(value) {
+		return value
+	}
+	return strings.ToValidUTF8(value, utf8Replacement)
+}
+
+// sanitizeLabels aplica sanitizeLabel a todos os valores informados, devolvendo
+// o mesmo slice quando nada precisa ser alterado.
+func sanitizeLabels(values []string) []string {
+	needsFix := false
+	for _, v := range values {
+		if !utf8.ValidString(v) {
+			needsFix = true
+			break
+		}
+	}
+	if !needsFix {
+		return values
+	}
+
+	out := make([]string, len(values))
+	for i, v := range values {
+		out[i] = sanitizeLabel(v)
+	}
+	return out
+}
+
 // parseFloat converte para float64 os diversos formatos que o driver MySQL pode
 // devolver (nil, []byte, string, números). Valores não numéricos retornam erro.
 func parseFloat(value interface{}) (float64, error) {
@@ -165,9 +208,16 @@ func parseFloat(value interface{}) (float64, error) {
 	case nil:
 		return 0, fmt.Errorf("valor nulo")
 	case float64:
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return 0, fmt.Errorf("valor não finito")
+		}
 		return v, nil
 	case float32:
-		return float64(v), nil
+		f := float64(v)
+		if math.IsNaN(f) || math.IsInf(f, 0) {
+			return 0, fmt.Errorf("valor não finito")
+		}
+		return f, nil
 	case int:
 		return float64(v), nil
 	case int32:
@@ -206,6 +256,13 @@ func parseFloatString(s string) (float64, error) {
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
 		return 0, fmt.Errorf("valor não numérico %q", s)
+	}
+	// ParseFloat aceita "NaN", "Inf" e "infinity". Nenhum deles é um valor de
+	// métrica útil: NaN some dos gráficos e faz comparações de alerta falharem
+	// silenciosamente, e Inf distorce qualquer agregação. Melhor tratar como
+	// valor inválido e omitir a métrica.
+	if math.IsNaN(f) || math.IsInf(f, 0) {
+		return 0, fmt.Errorf("valor não finito %q", s)
 	}
 	return f, nil
 }

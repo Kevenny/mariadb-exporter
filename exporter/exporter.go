@@ -3,6 +3,8 @@ package exporter
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -161,7 +163,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 			defer ccancel()
 
 			cStart := time.Now()
-			err := c.Collect(cctx, e.db, ch)
+			err := collectSafely(c, cctx, e.db, ch)
 			elapsed := time.Since(cStart).Seconds()
 
 			ch <- prometheus.MustNewConstMetric(
@@ -194,6 +196,23 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	} else {
 		e.scrapeSuccess.Set(1)
 	}
+}
+
+// collectSafely executa um coletor convertendo um eventual pânico em erro.
+//
+// Cada coletor roda em sua própria goroutine, e um pânico ali não pode ser
+// recuperado pelo chamador: derrubaria o processo inteiro do exporter, parando a
+// coleta de todas as instâncias monitoradas por causa de um único coletor com
+// defeito (um label inesperado, uma coluna ausente, uma regressão futura).
+// Recuperar aqui isola a falha ao coletor afetado, que é então contabilizado em
+// mariadb_scrape_errors_total como qualquer outro erro.
+func collectSafely(c collector.Collector, ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("pânico no coletor %s: %v\n%s", c.Name(), r, debug.Stack())
+		}
+	}()
+	return c.Collect(ctx, db, ch)
 }
 
 // Ping verifica a conectividade com o banco. Usado pelo endpoint /health.

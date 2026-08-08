@@ -85,6 +85,10 @@ func (c *GaleraCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- pro
 		}
 	}
 
+	// O nome do cluster vira label em todas as métricas deste coletor; se vier
+	// com bytes inválidos, sanitizar aqui cobre todos os pontos de emissão.
+	clusterName = sanitizeLabel(clusterName)
+
 	emit := func(desc *prometheus.Desc, variable string) {
 		raw, ok := values[variable]
 		if !ok {

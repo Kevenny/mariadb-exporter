@@ -83,23 +83,36 @@ func (c *QueryResponseTimeCollector) Collect(ctx context.Context, db *sql.DB, ch
 
 		timeStr := strings.TrimSpace(string(timeRaw))
 
-		count, err := parseFloat(string(countRaw))
+		parsedCount, err := parseFloat(string(countRaw))
 		if err != nil {
 			_ = level.Debug(c.Logger()).Log("msg", "linha de QRT com COUNT inválido, ignorada", "time", timeStr, "err", err)
 			continue
 		}
 
+		// A conversão para uint64 é feita aqui, uma vez, e com validação: um
+		// valor negativo ou não finito viraria um número astronômico por wrap de
+		// complemento de dois, inflando as contagens do histograma e quebrando
+		// qualquer rate() em cima delas.
+		count, ok := toCount(parsedCount)
+		if !ok {
+			_ = level.Debug(c.Logger()).Log("msg", "linha de QRT com COUNT fora de faixa, ignorada", "time", timeStr, "count", parsedCount)
+			continue
+		}
+
 		// TOTAL pode vir vazio em algumas versões; nesse caso a soma apenas não
-		// é incrementada por esta linha.
+		// é incrementada por esta linha. Valores não finitos são descartados:
+		// um NaN em _sum contamina a soma inteira e nunca mais sai dela.
 		if total, err := parseFloat(string(totalRaw)); err == nil {
-			totalSum += total
+			if !math.IsNaN(total) && !math.IsInf(total, 0) && total >= 0 {
+				totalSum += total
+			}
 		}
 
 		// A linha TOO LONG entra na contagem total mas não gera bucket: seu
 		// "limite" é infinito e já é representado por _count no formato
 		// Prometheus (seção 2.2, query_response_time).
 		if strings.EqualFold(timeStr, tooLongMarker) {
-			totalCount += uint64(count)
+			totalCount += count
 			continue
 		}
 
@@ -115,8 +128,8 @@ func (c *QueryResponseTimeCollector) Collect(ctx context.Context, db *sql.DB, ch
 			continue
 		}
 
-		totalCount += uint64(count)
-		buckets = append(buckets, bucket{upperBound: upperBound, count: uint64(count)})
+		totalCount += count
+		buckets = append(buckets, bucket{upperBound: upperBound, count: count})
 	}
 
 	if err := rows.Err(); err != nil {
@@ -159,4 +172,17 @@ func sanitizeBound(v float64) (float64, bool) {
 		return 0, false
 	}
 	return v, true
+}
+
+// toCount converte com segurança um COUNT lido da tabela para uint64.
+//
+// Uma conversão direta uint64(v) em Go tem resultado indefinido para valores
+// negativos ou fora de faixa: na prática, -5 vira 18446744073709551611. Como
+// esse número entra em _count e nos buckets do histograma, um único valor
+// estranho corromperia todas as queries de taxa em cima da métrica.
+func toCount(v float64) (uint64, bool) {
+	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > math.MaxUint64 {
+		return 0, false
+	}
+	return uint64(v), true
 }
