@@ -12,48 +12,49 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// queryResponseTimeQuery lê a tabela do plugin query_response_time. Cada linha
-// traz o limite superior do bucket (TIME), a contagem de queries naquele bucket
-// (COUNT) e o tempo total acumulado (TOTAL).
+// queryResponseTimeQuery reads the query_response_time plugin's table. Each
+// row carries the bucket's upper bound (TIME), the query count in that bucket
+// (COUNT) and the accumulated total time (TOTAL).
 const queryResponseTimeQuery = `
 SELECT TIME, COUNT, TOTAL
 FROM information_schema.QUERY_RESPONSE_TIME`
 
-// tooLongMarker é o valor textual da última linha da tabela, que agrupa as
-// queries acima do maior bucket configurado.
+// tooLongMarker is the textual value of the table's last row, which groups
+// queries above the largest configured bucket.
 const tooLongMarker = "TOO LONG"
 
-// QueryResponseTimeCollector expõe a distribuição de tempo de resposta como um
-// histograma Prometheus nativo.
+// QueryResponseTimeCollector exposes the response time distribution as a
+// native Prometheus histogram.
 type QueryResponseTimeCollector struct {
 	base
 	desc *prometheus.Desc
 }
 
-// NewQueryResponseTimeCollector cria o coletor query_response_time.
+// NewQueryResponseTimeCollector creates the query_response_time collector.
 func NewQueryResponseTimeCollector(enabled bool, logger log.Logger, features FeatureProvider) *QueryResponseTimeCollector {
 	return &QueryResponseTimeCollector{
 		base: newBase("query_response_time",
-			"Histograma de tempo de resposta de queries de information_schema.QUERY_RESPONSE_TIME (requer o plugin query_response_time e query_response_time_stats=ON).",
+			"Query response time histogram from information_schema.QUERY_RESPONSE_TIME (requires the query_response_time plugin and query_response_time_stats=ON).",
 			enabled, logger, features),
 		desc: newDesc("", "query_response_time_seconds",
-			"Distribuição do tempo de resposta das queries em segundos.", nil),
+			"Distribution of query response time in seconds.", nil),
 	}
 }
 
-// Available implementa Availability: depende do plugin query_response_time.
+// Available implements Availability: depends on the query_response_time
+// plugin.
 func (c *QueryResponseTimeCollector) Available() bool {
 	return c.featureFlags().HasQueryResponseTime
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 //
-// A tabela do MariaDB traz contagens por bucket, enquanto o formato de
-// histograma do Prometheus exige contagens cumulativas (cada bucket "le" inclui
-// os anteriores). A conversão é feita aqui.
+// MariaDB's table carries per-bucket counts, while Prometheus's histogram
+// format requires cumulative counts (each "le" bucket includes the previous
+// ones). The conversion is done here.
 func (c *QueryResponseTimeCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	if !c.Available() {
-		c.warned.warn("msg", "plugin query_response_time inativo ou query_response_time_stats=OFF; nenhuma métrica será coletada")
+		c.warned.warn("msg", "query_response_time plugin inactive or query_response_time_stats=OFF; no metrics will be collected")
 		return nil
 	}
 
@@ -85,32 +86,32 @@ func (c *QueryResponseTimeCollector) Collect(ctx context.Context, db *sql.DB, ch
 
 		parsedCount, err := parseFloat(string(countRaw))
 		if err != nil {
-			_ = level.Debug(c.Logger()).Log("msg", "linha de QRT com COUNT inválido, ignorada", "time", timeStr, "err", err)
+			_ = level.Debug(c.Logger()).Log("msg", "QRT row with invalid COUNT, ignored", "time", timeStr, "err", err)
 			continue
 		}
 
-		// A conversão para uint64 é feita aqui, uma vez, e com validação: um
-		// valor negativo ou não finito viraria um número astronômico por wrap de
-		// complemento de dois, inflando as contagens do histograma e quebrando
-		// qualquer rate() em cima delas.
+		// The conversion to uint64 is done here, once, and with validation: a
+		// negative or non-finite value would turn into an astronomical number
+		// via two's-complement wraparound, inflating the histogram counts and
+		// breaking any rate() computed on top of them.
 		count, ok := toCount(parsedCount)
 		if !ok {
-			_ = level.Debug(c.Logger()).Log("msg", "linha de QRT com COUNT fora de faixa, ignorada", "time", timeStr, "count", parsedCount)
+			_ = level.Debug(c.Logger()).Log("msg", "QRT row with out-of-range COUNT, ignored", "time", timeStr, "count", parsedCount)
 			continue
 		}
 
-		// TOTAL pode vir vazio em algumas versões; nesse caso a soma apenas não
-		// é incrementada por esta linha. Valores não finitos são descartados:
-		// um NaN em _sum contamina a soma inteira e nunca mais sai dela.
+		// TOTAL may come empty on some versions; in that case the sum simply
+		// isn't incremented by this row. Non-finite values are discarded: a
+		// NaN in _sum contaminates the whole sum and never leaves it.
 		if total, err := parseFloat(string(totalRaw)); err == nil {
 			if !math.IsNaN(total) && !math.IsInf(total, 0) && total >= 0 {
 				totalSum += total
 			}
 		}
 
-		// A linha TOO LONG entra na contagem total mas não gera bucket: seu
-		// "limite" é infinito e já é representado por _count no formato
-		// Prometheus (seção 2.2, query_response_time).
+		// The TOO LONG row counts toward the total but does not generate a
+		// bucket: its "bound" is infinite and is already represented by
+		// _count in the Prometheus format (section 2.2, query_response_time).
 		if strings.EqualFold(timeStr, tooLongMarker) {
 			totalCount += count
 			continue
@@ -118,13 +119,13 @@ func (c *QueryResponseTimeCollector) Collect(ctx context.Context, db *sql.DB, ch
 
 		parsed, err := parseFloat(timeStr)
 		if err != nil {
-			_ = level.Debug(c.Logger()).Log("msg", "linha de QRT com TIME inválido, ignorada", "time", timeStr, "err", err)
+			_ = level.Debug(c.Logger()).Log("msg", "QRT row with invalid TIME, ignored", "time", timeStr, "err", err)
 			continue
 		}
 
 		upperBound, ok := sanitizeBound(parsed)
 		if !ok {
-			_ = level.Debug(c.Logger()).Log("msg", "linha de QRT com limite fora de faixa, ignorada", "time", timeStr)
+			_ = level.Debug(c.Logger()).Log("msg", "QRT row with out-of-range bound, ignored", "time", timeStr)
 			continue
 		}
 
@@ -136,8 +137,8 @@ func (c *QueryResponseTimeCollector) Collect(ctx context.Context, db *sql.DB, ch
 		return err
 	}
 
-	// Tabela vazia (plugin recém-habilitado, sem tráfego): sem métricas e sem
-	// erro, conforme a seção 17.
+	// Empty table (plugin just enabled, no traffic yet): no metrics and no
+	// error, per section 17.
 	if len(buckets) == 0 && totalCount == 0 {
 		return nil
 	}
@@ -146,8 +147,8 @@ func (c *QueryResponseTimeCollector) Collect(ctx context.Context, db *sql.DB, ch
 		return buckets[i].upperBound < buckets[j].upperBound
 	})
 
-	// Acumula as contagens: o bucket "le=x" do Prometheus conta todas as
-	// observações <= x, não apenas as do intervalo.
+	// Accumulates the counts: Prometheus's "le=x" bucket counts all
+	// observations <= x, not just the ones in the interval.
 	cumulative := make(map[float64]uint64, len(buckets))
 	var running uint64
 	for _, b := range buckets {
@@ -165,8 +166,8 @@ func (c *QueryResponseTimeCollector) Collect(ctx context.Context, db *sql.DB, ch
 	return nil
 }
 
-// sanitizeBound protege contra limites não finitos vindos da tabela, que
-// invalidariam o histograma.
+// sanitizeBound protects against non-finite bounds coming from the table,
+// which would invalidate the histogram.
 func sanitizeBound(v float64) (float64, bool) {
 	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 {
 		return 0, false
@@ -174,12 +175,12 @@ func sanitizeBound(v float64) (float64, bool) {
 	return v, true
 }
 
-// toCount converte com segurança um COUNT lido da tabela para uint64.
+// toCount safely converts a COUNT read from the table to uint64.
 //
-// Uma conversão direta uint64(v) em Go tem resultado indefinido para valores
-// negativos ou fora de faixa: na prática, -5 vira 18446744073709551611. Como
-// esse número entra em _count e nos buckets do histograma, um único valor
-// estranho corromperia todas as queries de taxa em cima da métrica.
+// A direct uint64(v) conversion in Go has undefined results for negative or
+// out-of-range values: in practice, -5 becomes 18446744073709551611. Since
+// this number feeds into _count and the histogram buckets, a single bad value
+// would corrupt every rate query built on top of the metric.
 func toCount(v float64) (uint64, bool) {
 	if math.IsNaN(v) || math.IsInf(v, 0) || v < 0 || v > math.MaxUint64 {
 		return 0, false

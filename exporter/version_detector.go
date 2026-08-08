@@ -1,5 +1,5 @@
-// Package exporter contém o orquestrador dos coletores e a detecção de versão e
-// de plugins do MariaDB.
+// Package exporter contains the collector orchestrator and the detection of
+// MariaDB version and plugins.
 package exporter
 
 import (
@@ -19,36 +19,37 @@ import (
 	"github.com/Kevenny/mariadb-exporter/collector"
 )
 
-// FeatureRefreshInterval é o intervalo do refresh assíncrono de plugins
-// (seção 9 da especificação).
+// FeatureRefreshInterval is the interval of the asynchronous plugin refresh
+// (section 9 of the specification).
 const FeatureRefreshInterval = 5 * time.Minute
 
-// ErrNotMariaDB é devolvido quando a instância conectada não é um MariaDB.
-var ErrNotMariaDB = errors.New("instância não é MariaDB")
+// ErrNotMariaDB is returned when the connected instance is not a MariaDB.
+var ErrNotMariaDB = errors.New("instance is not MariaDB")
 
-// versionRe extrai major.minor.patch do começo da string de VERSION().
-// Cobre formatos como "11.4.3-MariaDB", "10.11.6-MariaDB-1:10.11.6+maria~ubu2204"
-// e "5.5.5-10.6.12-MariaDB" (prefixo de compatibilidade, tratado antes).
+// versionRe extracts major.minor.patch from the start of the VERSION()
+// string. Covers formats like "11.4.3-MariaDB",
+// "10.11.6-MariaDB-1:10.11.6+maria~ubu2204" and "5.5.5-10.6.12-MariaDB"
+// (compatibility prefix, handled beforehand).
 var versionRe = regexp.MustCompile(`^(\d+)\.(\d+)\.(\d+)`)
 
-// mysqlCompatPrefix é o prefixo que o MariaDB anuncia para clientes antigos
-// quando a variável version tem o replicate-annotate de compatibilidade. Nesses
-// casos a versão real vem depois do prefixo.
+// mysqlCompatPrefix is the prefix that MariaDB advertises to legacy clients
+// when the version variable has the compatibility replicate-annotate. In
+// those cases the real version comes after the prefix.
 const mysqlCompatPrefix = "5.5.5-"
 
-// DetectVersion executa SELECT VERSION() e @@version_comment, confirma que a
-// instância é MariaDB e extrai major.minor.patch.
+// DetectVersion runs SELECT VERSION() and @@version_comment, confirms that
+// the instance is MariaDB, and extracts major.minor.patch.
 //
-// Conforme a seção 2.1 da especificação, uma instância que não seja MariaDB é
-// um erro fatal de startup: devolve ErrNotMariaDB encapsulado numa mensagem
-// descritiva.
+// Per section 2.1 of the specification, an instance that is not MariaDB is a
+// fatal startup error: it returns ErrNotMariaDB wrapped in a descriptive
+// message.
 func DetectVersion(ctx context.Context, db *sql.DB) (*collector.VersionInfo, error) {
 	var full, comment string
 
-	// version_comment é opcional: em alguns forks/proxies ele não existe, e a
-	// ausência dele não deve impedir a detecção.
+	// version_comment is optional: on some forks/proxies it doesn't exist,
+	// and its absence must not prevent detection.
 	if err := db.QueryRowContext(ctx, "SELECT VERSION()").Scan(&full); err != nil {
-		return nil, fmt.Errorf("falha ao executar SELECT VERSION(): %w", err)
+		return nil, fmt.Errorf("failed to run SELECT VERSION(): %w", err)
 	}
 	if err := db.QueryRowContext(ctx, "SELECT @@global.version_comment").Scan(&comment); err != nil {
 		comment = ""
@@ -57,10 +58,10 @@ func DetectVersion(ctx context.Context, db *sql.DB) (*collector.VersionInfo, err
 	info := ParseVersion(full, comment)
 	if !info.IsMariaDB {
 		return info, fmt.Errorf(
-			"%w: VERSION() retornou %q (version_comment: %q). "+
-				"O mariadb_exporter coleta métricas exclusivas do MariaDB "+
+			"%w: VERSION() returned %q (version_comment: %q). "+
+				"mariadb_exporter collects metrics exclusive to MariaDB "+
 				"(USER_STATISTICS, QUERY_RESPONSE_TIME, METADATA_LOCK_INFO, DISKS, SHOW ALL SLAVES STATUS) "+
-				"e não funciona contra MySQL. Para MySQL use o mysqld_exporter",
+				"and does not work against MySQL. For MySQL use mysqld_exporter",
 			ErrNotMariaDB, full, comment,
 		)
 	}
@@ -68,8 +69,8 @@ func DetectVersion(ctx context.Context, db *sql.DB) (*collector.VersionInfo, err
 	return info, nil
 }
 
-// ParseVersion interpreta a string de VERSION() sem precisar de conexão, o que
-// facilita os testes.
+// ParseVersion parses the VERSION() string without needing a connection,
+// which makes testing easier.
 func ParseVersion(full, comment string) *collector.VersionInfo {
 	info := &collector.VersionInfo{
 		Full:    full,
@@ -80,8 +81,8 @@ func ParseVersion(full, comment string) *collector.VersionInfo {
 	info.IsMariaDB = strings.Contains(haystack, "mariadb")
 
 	numeric := strings.TrimSpace(full)
-	// O MariaDB pode prefixar a versão com "5.5.5-" para clientes legados; a
-	// versão verdadeira vem depois desse prefixo.
+	// MariaDB may prefix the version with "5.5.5-" for legacy clients; the
+	// true version comes after this prefix.
 	if strings.HasPrefix(numeric, mysqlCompatPrefix) {
 		numeric = strings.TrimPrefix(numeric, mysqlCompatPrefix)
 	}
@@ -95,8 +96,8 @@ func ParseVersion(full, comment string) *collector.VersionInfo {
 	return info
 }
 
-// FeatureDetector detecta e mantém atualizadas as feature flags da instância.
-// Implementa collector.FeatureProvider e é seguro para uso concorrente.
+// FeatureDetector detects and keeps the instance's feature flags up to date.
+// Implements collector.FeatureProvider and is safe for concurrent use.
 type FeatureDetector struct {
 	db     *sql.DB
 	logger log.Logger
@@ -106,7 +107,7 @@ type FeatureDetector struct {
 	features *collector.FeatureFlags
 }
 
-// NewFeatureDetector cria o detector com a versão já conhecida.
+// NewFeatureDetector creates the detector with the version already known.
 func NewFeatureDetector(db *sql.DB, version *collector.VersionInfo, logger log.Logger) *FeatureDetector {
 	return &FeatureDetector{
 		db:       db,
@@ -116,14 +117,14 @@ func NewFeatureDetector(db *sql.DB, version *collector.VersionInfo, logger log.L
 	}
 }
 
-// Version devolve a versão detectada.
+// Version returns the detected version.
 func (d *FeatureDetector) Version() *collector.VersionInfo {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
 	return d.version
 }
 
-// Features devolve uma cópia das feature flags atuais.
+// Features returns a copy of the current feature flags.
 func (d *FeatureDetector) Features() *collector.FeatureFlags {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -134,7 +135,7 @@ func (d *FeatureDetector) Features() *collector.FeatureFlags {
 	return &copied
 }
 
-// pluginQuery consulta os plugins relevantes ao exporter (seção 9).
+// pluginQuery queries the plugins relevant to the exporter (section 9).
 const pluginQuery = `
 SELECT plugin_name, plugin_status
 FROM information_schema.plugins
@@ -150,24 +151,24 @@ SELECT VARIABLE_VALUE
 FROM information_schema.GLOBAL_VARIABLES
 WHERE VARIABLE_NAME = 'userstat'`
 
-// Refresh reconsulta plugins e variáveis, atualizando as feature flags.
+// Refresh re-queries plugins and variables, updating the feature flags.
 //
-// Erros individuais são logados mas não abortam o refresh: uma permissão
-// faltando para uma das consultas não deve zerar as demais features.
+// Individual errors are logged but do not abort the refresh: a missing
+// permission for one of the queries should not zero out the other features.
 func (d *FeatureDetector) Refresh(ctx context.Context) {
 	features := &collector.FeatureFlags{}
 
 	if err := d.detectPlugins(ctx, features); err != nil {
-		_ = level.Warn(d.logger).Log("msg", "falha ao detectar plugins", "err", err)
+		_ = level.Warn(d.logger).Log("msg", "failed to detect plugins", "err", err)
 	}
 	if err := d.detectUserStat(ctx, features); err != nil {
-		_ = level.Warn(d.logger).Log("msg", "falha ao detectar userstat", "err", err)
+		_ = level.Warn(d.logger).Log("msg", "failed to detect userstat", "err", err)
 	}
 	if err := d.detectGalera(ctx, features); err != nil {
-		_ = level.Warn(d.logger).Log("msg", "falha ao detectar wsrep/galera", "err", err)
+		_ = level.Warn(d.logger).Log("msg", "failed to detect wsrep/galera", "err", err)
 	}
 	if err := d.detectReplica(ctx, features); err != nil {
-		_ = level.Warn(d.logger).Log("msg", "falha ao detectar estado de réplica", "err", err)
+		_ = level.Warn(d.logger).Log("msg", "failed to detect replica state", "err", err)
 	}
 
 	d.mu.Lock()
@@ -175,7 +176,7 @@ func (d *FeatureDetector) Refresh(ctx context.Context) {
 	d.mu.Unlock()
 
 	_ = level.Debug(d.logger).Log(
-		"msg", "feature flags atualizadas",
+		"msg", "feature flags updated",
 		"userstat", features.HasUserStat,
 		"query_response_time", features.HasQueryResponseTime,
 		"metadata_lock_info", features.HasMetadataLockInfo,
@@ -213,27 +214,27 @@ func (d *FeatureDetector) detectPlugins(ctx context.Context, features *collector
 		return err
 	}
 
-	// O plugin instalado só entrega dados se a coleta estiver ligada; sem isso a
-	// tabela QUERY_RESPONSE_TIME existe mas fica vazia.
+	// The installed plugin only delivers data if collection is turned on;
+	// without that the QUERY_RESPONSE_TIME table exists but stays empty.
 	if features.HasQueryResponseTime {
 		var value string
 		err := d.db.QueryRowContext(ctx, "SELECT @@global.query_response_time_stats").Scan(&value)
 		switch {
 		case err != nil:
-			// Variável ausente: mantém o plugin como disponível e deixa o
-			// coletor decidir pelo conteúdo da tabela.
-			_ = level.Debug(d.logger).Log("msg", "query_response_time_stats indisponível", "err", err)
+			// Missing variable: keeps the plugin as available and lets the
+			// collector decide based on the table's content.
+			_ = level.Debug(d.logger).Log("msg", "query_response_time_stats unavailable", "err", err)
 		case !isTruthy(value):
 			features.HasQueryResponseTime = false
 		}
 	}
 
-	// A versão mínima do METADATA_LOCK_INFO é 10.0.7 (seção 2.2).
+	// The minimum version for METADATA_LOCK_INFO is 10.0.7 (section 2.2).
 	if features.HasMetadataLockInfo {
 		if v := d.Version(); v != nil && !v.AtLeast(10, 0, 7) {
 			_ = level.Warn(d.logger).Log(
-				"msg", "METADATA_LOCK_INFO requer MariaDB >= 10.0.7; coletor será desabilitado",
-				"versao", v.String(),
+				"msg", "METADATA_LOCK_INFO requires MariaDB >= 10.0.7; collector will be disabled",
+				"version", v.String(),
 			)
 			features.HasMetadataLockInfo = false
 		}
@@ -267,9 +268,9 @@ func (d *FeatureDetector) detectGalera(ctx context.Context, features *collector.
 	return nil
 }
 
-// detectReplica verifica se a instância replica de algum master. Usa
-// gtid_slave_pos como sinal primário por ser barato e não exigir privilégio de
-// REPLICATION CLIENT.
+// detectReplica checks whether the instance replicates from some master.
+// Uses gtid_slave_pos as the primary signal since it is cheap and does not
+// require the REPLICATION CLIENT privilege.
 func (d *FeatureDetector) detectReplica(ctx context.Context, features *collector.FeatureFlags) error {
 	var value string
 	err := d.db.QueryRowContext(ctx, "SELECT @@global.gtid_slave_pos").Scan(&value)
@@ -278,8 +279,8 @@ func (d *FeatureDetector) detectReplica(ctx context.Context, features *collector
 		return nil
 	}
 
-	// Fallback: conta as linhas de SHOW ALL SLAVES STATUS. Ausência de linhas
-	// significa que a instância não é réplica.
+	// Fallback: counts the rows from SHOW ALL SLAVES STATUS. Absence of rows
+	// means the instance is not a replica.
 	rows, qErr := d.db.QueryContext(ctx, "SHOW ALL SLAVES STATUS")
 	if qErr != nil {
 		if err != nil {
@@ -292,8 +293,8 @@ func (d *FeatureDetector) detectReplica(ctx context.Context, features *collector
 	return rows.Err()
 }
 
-// Run dispara um refresh imediato e depois a cada FeatureRefreshInterval até o
-// contexto ser cancelado.
+// Run triggers an immediate refresh and then one every FeatureRefreshInterval
+// until the context is canceled.
 func (d *FeatureDetector) Run(ctx context.Context, interval time.Duration) {
 	if interval <= 0 {
 		interval = FeatureRefreshInterval
@@ -314,7 +315,7 @@ func (d *FeatureDetector) Run(ctx context.Context, interval time.Duration) {
 	}
 }
 
-// isTruthy interpreta os valores booleanos textuais usados pelo MariaDB.
+// isTruthy interprets the textual boolean values used by MariaDB.
 func isTruthy(value string) bool {
 	switch strings.ToUpper(strings.TrimSpace(value)) {
 	case "ON", "1", "YES", "TRUE", "ALL", "ACTIVE":

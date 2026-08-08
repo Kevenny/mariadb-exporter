@@ -9,14 +9,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// metadataLockQuery lê o plugin metadata_lock_info. As colunas TABLE_SCHEMA e
-// TABLE_NAME ficam vazias para locks que não são de tabela (ex: GLOBAL, SCHEMA).
+// metadataLockQuery reads the metadata_lock_info plugin. The TABLE_SCHEMA and
+// TABLE_NAME columns are empty for locks that are not table-scoped (e.g.
+// GLOBAL, SCHEMA).
 const metadataLockQuery = `
 SELECT LOCK_MODE, LOCK_TYPE, TABLE_SCHEMA, TABLE_NAME
 FROM information_schema.METADATA_LOCK_INFO`
 
-// MetadataLocksCollector agrega os metadata locks ativos por modo, tipo e
-// tabela. Requer o plugin metadata_lock_info e MariaDB >= 10.0.7.
+// MetadataLocksCollector aggregates active metadata locks by mode, type and
+// table. Requires the metadata_lock_info plugin and MariaDB >= 10.0.7.
 type MetadataLocksCollector struct {
 	base
 
@@ -24,29 +25,29 @@ type MetadataLocksCollector struct {
 	waiting *prometheus.Desc
 }
 
-// NewMetadataLocksCollector cria o coletor metadata_locks.
+// NewMetadataLocksCollector creates the metadata_locks collector.
 func NewMetadataLocksCollector(enabled bool, logger log.Logger, features FeatureProvider) *MetadataLocksCollector {
 	labels := []string{"lock_mode", "lock_type", "table_schema", "table_name"}
 	return &MetadataLocksCollector{
 		base: newBase("metadata_locks",
-			"Metadata locks ativos de information_schema.METADATA_LOCK_INFO (requer o plugin metadata_lock_info e MariaDB >= 10.0.7).",
+			"Active metadata locks from information_schema.METADATA_LOCK_INFO (requires the metadata_lock_info plugin and MariaDB >= 10.0.7).",
 			enabled, logger, features),
 
-		total:   newDesc("metadata_locks", "total", "Total de metadata locks ativos agrupados por modo, tipo e tabela.", labels),
-		waiting: newDesc("metadata_lock", "waiting_total", "Total de metadata locks em espera agrupados por modo, tipo e tabela.", labels),
+		total:   newDesc("metadata_locks", "total", "Total active metadata locks grouped by mode, type and table.", labels),
+		waiting: newDesc("metadata_lock", "waiting_total", "Total waiting metadata locks grouped by mode, type and table.", labels),
 	}
 }
 
-// Available implementa Availability: depende do plugin metadata_lock_info e da
-// versão mínima, ambos já resolvidos pelo detector de features.
+// Available implements Availability: depends on the metadata_lock_info plugin
+// and the minimum version, both already resolved by the feature detector.
 func (c *MetadataLocksCollector) Available() bool {
 	return c.featureFlags().HasMetadataLockInfo
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 func (c *MetadataLocksCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	if !c.Available() {
-		c.warned.warn("msg", "plugin metadata_lock_info inativo (ou MariaDB < 10.0.7); nenhuma métrica será coletada")
+		c.warned.warn("msg", "metadata_lock_info plugin inactive (or MariaDB < 10.0.7); no metrics will be collected")
 		return nil
 	}
 
@@ -56,8 +57,8 @@ func (c *MetadataLocksCollector) Collect(ctx context.Context, db *sql.DB, ch cha
 	}
 	defer rows.Close()
 
-	// Agrupa em memória: a tabela lista um lock por linha, e o que interessa é a
-	// contagem por combinação de labels.
+	// Aggregates in memory: the table lists one lock per row, and what matters
+	// is the count per label combination.
 	type key struct {
 		mode, lockType, schema, table string
 	}
@@ -80,13 +81,13 @@ func (c *MetadataLocksCollector) Collect(ctx context.Context, db *sql.DB, ch cha
 
 		totals[k]++
 
-		// Locks pendentes aparecem com LOCK_MODE contendo "WAIT" (ex:
-		// MDL_SHARED_WRITE aguardando vira um estado de espera reportado no modo).
+		// Pending locks appear with LOCK_MODE containing "WAIT" (e.g. a waiting
+		// MDL_SHARED_WRITE turns into a waiting state reported in the mode).
 		if strings.Contains(strings.ToUpper(k.mode), "WAIT") {
 			waits[k]++
 		} else if _, seen := waits[k]; !seen {
-			// Garante que a série de espera exista com 0 quando há locks ativos
-			// da mesma combinação, evitando gaps no gráfico.
+			// Ensures the waiting series exists with 0 when there are active
+			// locks for the same combination, avoiding gaps in the graph.
 			waits[k] = 0
 		}
 	}

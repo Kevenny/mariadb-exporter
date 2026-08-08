@@ -13,13 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testLogger devolve um logger silencioso para os testes.
+// testLogger returns a silent logger for the tests.
 func testLogger() log.Logger {
 	return log.NewNopLogger()
 }
 
-// staticFeatures implementa FeatureProvider com valores fixos, permitindo testar
-// os caminhos de plugin disponível e indisponível.
+// staticFeatures implements FeatureProvider with fixed values, allowing the
+// available and unavailable plugin paths to be tested.
 type staticFeatures struct {
 	features *FeatureFlags
 	version  *VersionInfo
@@ -28,7 +28,7 @@ type staticFeatures struct {
 func (s staticFeatures) Features() *FeatureFlags { return s.features }
 func (s staticFeatures) Version() *VersionInfo   { return s.version }
 
-// allFeatures habilita todas as features detectáveis.
+// allFeatures enables all detectable features.
 func allFeatures() staticFeatures {
 	return staticFeatures{
 		features: &FeatureFlags{
@@ -43,7 +43,7 @@ func allFeatures() staticFeatures {
 	}
 }
 
-// noFeatures desabilita todas as features.
+// noFeatures disables all features.
 func noFeatures() staticFeatures {
 	return staticFeatures{
 		features: &FeatureFlags{},
@@ -51,8 +51,9 @@ func noFeatures() staticFeatures {
 	}
 }
 
-// newMockDB cria um *sql.DB com sqlmock. QueryMatcherRegexp é usado porque as
-// queries do exporter são multilinha e a comparação literal seria frágil.
+// newMockDB creates a *sql.DB with sqlmock. QueryMatcherRegexp is used because
+// the exporter's queries are multiline and a literal comparison would be
+// fragile.
 func newMockDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	t.Helper()
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
@@ -61,10 +62,10 @@ func newMockDB(t *testing.T) (*sql.DB, sqlmock.Sqlmock) {
 	return db, mock
 }
 
-// runCollect executa o coletor e devolve as métricas emitidas.
+// runCollect runs the collector and returns the emitted metrics.
 //
-// O Collect roda em goroutine e o canal é fechado ao término, para que a leitura
-// não precise adivinhar quantas métricas virão.
+// Collect runs in a goroutine and the channel is closed on completion, so the
+// reader doesn't need to guess how many metrics will arrive.
 func runCollect(t *testing.T, c Collector, db *sql.DB) ([]prometheus.Metric, error) {
 	t.Helper()
 
@@ -84,19 +85,19 @@ func runCollect(t *testing.T, c Collector, db *sql.DB) ([]prometheus.Metric, err
 	return metrics, <-errCh
 }
 
-// metricSnapshot é a forma comparável de uma métrica coletada.
+// metricSnapshot is the comparable form of a collected metric.
 type metricSnapshot struct {
 	Name   string
 	Labels map[string]string
 	Value  float64
 
-	// Preenchidos apenas para histogramas.
+	// Filled in only for histograms.
 	SampleCount uint64
 	SampleSum   float64
 	Buckets     map[float64]uint64
 }
 
-// snapshot converte as métricas do canal em structs inspecionáveis.
+// snapshot converts the metrics from the channel into inspectable structs.
 func snapshot(t *testing.T, metrics []prometheus.Metric) []metricSnapshot {
 	t.Helper()
 
@@ -136,21 +137,21 @@ func snapshot(t *testing.T, metrics []prometheus.Metric) []metricSnapshot {
 	return out
 }
 
-// metricName extrai o nome totalmente qualificado a partir do Desc.
+// metricName extracts the fully qualified name from the Desc.
 //
-// O Desc não expõe o nome como campo público, mas seu String() tem o formato
-// `Desc{fqName: "nome", help: ...}`, de onde o nome é lido.
+// Desc does not expose the name as a public field, but its String() has the
+// format `Desc{fqName: "name", help: ...}`, from which the name is read.
 func metricName(t *testing.T, m prometheus.Metric) string {
 	t.Helper()
 
 	desc := m.Desc().String()
 	const marker = `fqName: "`
 	start := indexOf(desc, marker)
-	require.GreaterOrEqual(t, start, 0, "formato inesperado de Desc: %s", desc)
+	require.GreaterOrEqual(t, start, 0, "unexpected Desc format: %s", desc)
 	start += len(marker)
 
 	end := indexOf(desc[start:], `"`)
-	require.GreaterOrEqual(t, end, 0, "formato inesperado de Desc: %s", desc)
+	require.GreaterOrEqual(t, end, 0, "unexpected Desc format: %s", desc)
 
 	return desc[start : start+end]
 }
@@ -164,7 +165,7 @@ func indexOf(s, substr string) int {
 	return -1
 }
 
-// findMetric localiza a primeira métrica com o nome e os labels informados.
+// findMetric locates the first metric with the given name and labels.
 func findMetric(snaps []metricSnapshot, name string, labels map[string]string) (metricSnapshot, bool) {
 	for _, s := range snaps {
 		if s.Name != name {
@@ -184,19 +185,20 @@ func findMetric(snaps []metricSnapshot, name string, labels map[string]string) (
 	return metricSnapshot{}, false
 }
 
-// requireMetric falha o teste se a métrica não existir, devolvendo-a caso exista.
+// requireMetric fails the test if the metric does not exist, returning it if
+// it does.
 func requireMetric(t *testing.T, snaps []metricSnapshot, name string, labels map[string]string) metricSnapshot {
 	t.Helper()
 	s, ok := findMetric(snaps, name, labels)
-	require.True(t, ok, "métrica %s com labels %v não encontrada; coletadas: %v", name, labels, names(snaps))
+	require.True(t, ok, "metric %s with labels %v not found; collected: %v", name, labels, names(snaps))
 	return s
 }
 
-// requireNoMetric falha o teste se a métrica existir.
+// requireNoMetric fails the test if the metric exists.
 func requireNoMetric(t *testing.T, snaps []metricSnapshot, name string) {
 	t.Helper()
 	for _, s := range snaps {
-		require.NotEqual(t, name, s.Name, "métrica %s não deveria ter sido emitida", name)
+		require.NotEqual(t, name, s.Name, "metric %s should not have been emitted", name)
 	}
 }
 
@@ -208,13 +210,13 @@ func names(snaps []metricSnapshot) []string {
 	return out
 }
 
-// discardWriter evita que os logs dos coletores poluam a saída dos testes.
+// discardWriter prevents collector logs from cluttering test output.
 var _ io.Writer = io.Discard
 
 func TestVersionInfoAtLeast(t *testing.T) {
 	v := &VersionInfo{Major: 10, Minor: 0, Patch: 7}
 
-	require.True(t, v.AtLeast(10, 0, 7), "mesma versão deve satisfazer")
+	require.True(t, v.AtLeast(10, 0, 7), "same version should satisfy")
 	require.True(t, v.AtLeast(10, 0, 6))
 	require.True(t, v.AtLeast(9, 9, 9))
 	require.False(t, v.AtLeast(10, 0, 8))
@@ -222,7 +224,7 @@ func TestVersionInfoAtLeast(t *testing.T) {
 	require.False(t, v.AtLeast(11, 0, 0))
 
 	var nilVersion *VersionInfo
-	require.False(t, nilVersion.AtLeast(10, 0, 0), "versão nil nunca satisfaz")
+	require.False(t, nilVersion.AtLeast(10, 0, 0), "nil version never satisfies")
 }
 
 func TestParseFloat(t *testing.T) {
@@ -232,15 +234,15 @@ func TestParseFloat(t *testing.T) {
 		want    float64
 		wantErr bool
 	}{
-		{"inteiro", int64(42), 42, false},
-		{"string numérica", "3.5", 3.5, false},
-		{"bytes numéricos", []byte("120"), 120, false},
-		{"ON vira 1", "ON", 1, false},
-		{"OFF vira 0", "OFF", 0, false},
-		{"YES vira 1", "yes", 1, false},
-		{"nulo é erro", nil, 0, true},
-		{"texto é erro", "abacate", 0, true},
-		{"vazio é erro", "", 0, true},
+		{"integer", int64(42), 42, false},
+		{"numeric string", "3.5", 3.5, false},
+		{"numeric bytes", []byte("120"), 120, false},
+		{"ON becomes 1", "ON", 1, false},
+		{"OFF becomes 0", "OFF", 0, false},
+		{"YES becomes 1", "yes", 1, false},
+		{"nil is an error", nil, 0, true},
+		{"text is an error", "abacate", 0, true},
+		{"empty is an error", "", 0, true},
 	}
 
 	for _, tc := range cases {
@@ -262,7 +264,7 @@ func TestRegistryEnabled(t *testing.T) {
 		NewInfoCollector(testLogger(), noFeatures(), nil),
 		NewGaleraCollector(false, testLogger(), noFeatures()),
 		NewInnoDBCollector(true, testLogger(), noFeatures()),
-		nil, // valores nil são ignorados
+		nil, // nil values are ignored
 	)
 
 	require.Len(t, r.All(), 3)

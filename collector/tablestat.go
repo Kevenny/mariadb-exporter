@@ -9,8 +9,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// tableStatQueryTmpl ordena por ROWS_READ DESC antes de aplicar o limite, para
-// que o corte preserve as tabelas mais movimentadas (seção 2.2, tablestat).
+// tableStatQueryTmpl orders by ROWS_READ DESC before applying the limit, so
+// the cutoff preserves the busiest tables (section 2.2, tablestat).
 const tableStatQueryTmpl = `
 SELECT TABLE_SCHEMA,
        TABLE_NAME,
@@ -21,8 +21,8 @@ FROM information_schema.TABLE_STATISTICS
 ORDER BY ROWS_READ DESC
 LIMIT %d`
 
-// TableStatCollector coleta information_schema.TABLE_STATISTICS.
-// Requer `SET GLOBAL userstat = ON`.
+// TableStatCollector collects information_schema.TABLE_STATISTICS.
+// Requires `SET GLOBAL userstat = ON`.
 type TableStatCollector struct {
 	base
 	limit int
@@ -32,29 +32,29 @@ type TableStatCollector struct {
 	rowsChangedXIndexes *prometheus.Desc
 }
 
-// NewTableStatCollector cria o coletor tablestat com o limite de tabelas por
-// scrape.
+// NewTableStatCollector creates the tablestat collector with the limit of
+// tables per scrape.
 func NewTableStatCollector(enabled bool, limit int, logger log.Logger, features FeatureProvider) *TableStatCollector {
 	labels := []string{"schema", "table"}
 	return &TableStatCollector{
-		base:  newBase("tablestat", "Estatísticas por tabela de information_schema.TABLE_STATISTICS (requer userstat=ON).", enabled, logger, features),
+		base:  newBase("tablestat", "Per-table statistics from information_schema.TABLE_STATISTICS (requires userstat=ON).", enabled, logger, features),
 		limit: limit,
 
-		rowsRead:            newDesc("table", "rows_read_total", "Total de linhas lidas na tabela.", labels),
-		rowsChanged:         newDesc("table", "rows_changed_total", "Total de linhas alteradas na tabela.", labels),
-		rowsChangedXIndexes: newDesc("table", "rows_changed_x_indexes_total", "Total de linhas alteradas multiplicado pelo número de índices afetados.", labels),
+		rowsRead:            newDesc("table", "rows_read_total", "Total rows read from the table.", labels),
+		rowsChanged:         newDesc("table", "rows_changed_total", "Total rows changed in the table.", labels),
+		rowsChangedXIndexes: newDesc("table", "rows_changed_x_indexes_total", "Total rows changed multiplied by the number of affected indexes.", labels),
 	}
 }
 
-// Available implementa Availability: depende da variável userstat.
+// Available implements Availability: depends on the userstat variable.
 func (c *TableStatCollector) Available() bool {
 	return c.featureFlags().HasUserStat
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 func (c *TableStatCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	if !c.Available() {
-		c.warned.warn("msg", "userstat está OFF; nenhuma métrica será coletada. Habilite com SET GLOBAL userstat = ON")
+		c.warned.warn("msg", "userstat is OFF; no metrics will be collected. Enable with SET GLOBAL userstat = ON")
 		return nil
 	}
 

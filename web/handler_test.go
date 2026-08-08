@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// fakePinger simula o estado da conexão com o banco.
+// fakePinger simulates the state of the database connection.
 type fakePinger struct {
 	err error
 }
@@ -38,7 +38,7 @@ func newTestHandler(t *testing.T, pinger Pinger) http.Handler {
 	})
 }
 
-// Conectado: 200 com {"status":"ok"} (seção 2.3).
+// Connected: 200 with {"status":"ok"} (section 2.3).
 func TestHealthEndpointOK(t *testing.T) {
 	h := newTestHandler(t, fakePinger{})
 
@@ -53,11 +53,11 @@ func TestHealthEndpointOK(t *testing.T) {
 	require.Equal(t, "ok", body["status"])
 }
 
-// Desconectado: 503 com status error e mensagem genérica.
+// Disconnected: 503 with status error and a generic message.
 //
-// A mensagem é deliberadamente genérica: /health não tem autenticação, e o erro
-// do driver pode conter o DSN (com senha) ou endereços da rede interna. O
-// detalhe fica no log do exporter.
+// The message is deliberately generic: /health has no authentication, and
+// the driver's error may contain the DSN (with password) or internal
+// network addresses. The detail stays in the exporter's log.
 func TestHealthEndpointUnavailable(t *testing.T) {
 	h := newTestHandler(t, fakePinger{err: errors.New("connection refused")})
 
@@ -71,7 +71,7 @@ func TestHealthEndpointUnavailable(t *testing.T) {
 	require.Equal(t, "error", body["status"])
 	require.NotEmpty(t, body["message"])
 	require.NotContains(t, body["message"], "connection refused",
-		"o erro do driver não deve aparecer na resposta pública")
+		"the driver's error should not appear in the public response")
 }
 
 func TestHealthEndpointNilPinger(t *testing.T) {
@@ -108,7 +108,7 @@ func TestIndexEndpoint(t *testing.T) {
 	require.Contains(t, body, "1.0.0-teste")
 }
 
-// Paths desconhecidos devem dar 404 em vez de servirem a página de índice.
+// Unknown paths should give 404 instead of serving the index page.
 func TestUnknownPathReturns404(t *testing.T) {
 	h := newTestHandler(t, fakePinger{})
 
@@ -118,7 +118,7 @@ func TestUnknownPathReturns404(t *testing.T) {
 	require.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-// O path das métricas é configurável.
+// The metrics path is configurable.
 func TestCustomTelemetryPath(t *testing.T) {
 	reg := prometheus.NewRegistry()
 	h := NewHandler(Options{
@@ -139,7 +139,7 @@ func TestCustomTelemetryPath(t *testing.T) {
 
 func TestPromLoggerDoesNotPanicWithNilLogger(t *testing.T) {
 	l := promLogger{}
-	require.NotPanics(t, func() { l.Println("erro qualquer") })
+	require.NotPanics(t, func() { l.Println("some error") })
 }
 
 func TestIndexEscapesVersion(t *testing.T) {
@@ -156,5 +156,5 @@ func TestIndexEscapesVersion(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	require.False(t, strings.Contains(rec.Body.String(), "<script>alert(1)</script>"),
-		"html/template deve escapar a versão")
+		"html/template should escape the version")
 }

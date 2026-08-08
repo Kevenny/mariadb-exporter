@@ -10,13 +10,14 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// InnoDBCollector expõe métricas do engine InnoDB.
+// InnoDBCollector exposes InnoDB engine metrics.
 //
-// A especificação cita SHOW ENGINE INNODB STATUS como fonte, mas os valores
-// pedidos (buffer pool, row locks, deadlocks) estão todos disponíveis como
-// contadores em SHOW GLOBAL STATUS, que é um formato estruturado e estável entre
-// versões — parsear o texto livre do INNODB STATUS seria frágil. Os deadlocks
-// são a exceção: só existem no texto, então há um fallback para ele.
+// The specification cites SHOW ENGINE INNODB STATUS as the source, but the
+// requested values (buffer pool, row locks, deadlocks) are all available as
+// counters in SHOW GLOBAL STATUS, which is a structured format that's stable
+// across versions — parsing INNODB STATUS's free-form text would be fragile.
+// Deadlocks are the exception: they only exist in the text, so there is a
+// fallback for it.
 type InnoDBCollector struct {
 	base
 
@@ -28,22 +29,22 @@ type InnoDBCollector struct {
 	deadlocks              *prometheus.Desc
 }
 
-// NewInnoDBCollector cria o coletor innodb.
+// NewInnoDBCollector creates the innodb collector.
 func NewInnoDBCollector(enabled bool, logger log.Logger, features FeatureProvider) *InnoDBCollector {
 	return &InnoDBCollector{
-		base: newBase("innodb", "Métricas do engine InnoDB (buffer pool, row locks, deadlocks).", enabled, logger, features),
+		base: newBase("innodb", "InnoDB engine metrics (buffer pool, row locks, deadlocks).", enabled, logger, features),
 
-		bufferPoolReadRequests: newDesc("innodb", "buffer_pool_read_requests_total", "Total de leituras lógicas requisitadas ao buffer pool.", nil),
-		bufferPoolReads:        newDesc("innodb", "buffer_pool_reads_total", "Total de leituras que o buffer pool não conseguiu satisfazer e foram ao disco.", nil),
-		bufferPoolPages:        newDesc("innodb", "buffer_pool_pages_total", "Páginas do buffer pool por tipo.", []string{"type"}),
-		rowLockWaits:           newDesc("innodb", "row_lock_waits_total", "Total de vezes que uma operação esperou por um row lock.", nil),
-		rowLockTimeAvg:         newDesc("innodb", "row_lock_time_avg_milliseconds", "Tempo médio de espera por row lock em milissegundos.", nil),
-		deadlocks:              newDesc("innodb", "deadlocks_total", "Total de deadlocks detectados pelo InnoDB.", nil),
+		bufferPoolReadRequests: newDesc("innodb", "buffer_pool_read_requests_total", "Total logical reads requested from the buffer pool.", nil),
+		bufferPoolReads:        newDesc("innodb", "buffer_pool_reads_total", "Total reads the buffer pool could not satisfy and went to disk.", nil),
+		bufferPoolPages:        newDesc("innodb", "buffer_pool_pages_total", "Buffer pool pages by type.", []string{"type"}),
+		rowLockWaits:           newDesc("innodb", "row_lock_waits_total", "Total times an operation waited for a row lock.", nil),
+		rowLockTimeAvg:         newDesc("innodb", "row_lock_time_avg_milliseconds", "Average row lock wait time in milliseconds.", nil),
+		deadlocks:              newDesc("innodb", "deadlocks_total", "Total deadlocks detected by InnoDB.", nil),
 	}
 }
 
-// innodbStatusMappings liga variáveis de SHOW GLOBAL STATUS às métricas simples
-// (sem label) deste coletor.
+// innodbStatusMappings links SHOW GLOBAL STATUS variables to this collector's
+// simple (label-less) metrics.
 var innodbStatusMappings = map[string]struct {
 	field string
 	kind  prometheus.ValueType
@@ -55,8 +56,8 @@ var innodbStatusMappings = map[string]struct {
 	"innodb_deadlocks":                 {"deadlocks", prometheus.CounterValue},
 }
 
-// innodbPageTypes mapeia as variáveis de página do buffer pool para o valor do
-// label `type` (seção 2.2: free, data, dirty).
+// innodbPageTypes maps the buffer pool page variables to the `type` label
+// value (section 2.2: free, data, dirty).
 var innodbPageTypes = map[string]string{
 	"innodb_buffer_pool_pages_free":  "free",
 	"innodb_buffer_pool_pages_data":  "data",
@@ -65,7 +66,7 @@ var innodbPageTypes = map[string]string{
 	"innodb_buffer_pool_pages_total": "total",
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 func (c *InnoDBCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	rows, err := db.QueryContext(ctx, "SHOW GLOBAL STATUS LIKE 'Innodb_%'")
 	if err != nil {
@@ -96,7 +97,7 @@ func (c *InnoDBCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- pro
 		if mapping, ok := innodbStatusMappings[key]; ok {
 			v, err := parseFloat(string(raw))
 			if err != nil {
-				_ = level.Debug(c.Logger()).Log("msg", "variável InnoDB ignorada", "variavel", name, "err", err)
+				_ = level.Debug(c.Logger()).Log("msg", "InnoDB variable ignored", "variable", name, "err", err)
 				continue
 			}
 			ch <- prometheus.MustNewConstMetric(descByField[mapping.field], mapping.kind, v)
@@ -109,7 +110,7 @@ func (c *InnoDBCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- pro
 		if pageType, ok := innodbPageTypes[key]; ok {
 			v, err := parseFloat(string(raw))
 			if err != nil {
-				_ = level.Debug(c.Logger()).Log("msg", "variável de página InnoDB ignorada", "variavel", name, "err", err)
+				_ = level.Debug(c.Logger()).Log("msg", "InnoDB page variable ignored", "variable", name, "err", err)
 				continue
 			}
 			ch <- prometheus.MustNewConstMetric(c.bufferPoolPages, prometheus.GaugeValue, v, pageType)
@@ -120,9 +121,9 @@ func (c *InnoDBCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- pro
 		return err
 	}
 
-	// Innodb_deadlocks não existe em todas as builds (é um status do XtraDB/
-	// Percona presente no MariaDB, mas ausente em algumas versões). Quando falta,
-	// recorre ao contador do texto de SHOW ENGINE INNODB STATUS.
+	// Innodb_deadlocks does not exist on all builds (it's an XtraDB/Percona
+	// status present in MariaDB but absent on some versions). When missing,
+	// falls back to the counter from SHOW ENGINE INNODB STATUS's text.
 	if !sawDeadlocks {
 		if count, ok := c.deadlockCountFromEngineStatus(ctx, db); ok {
 			ch <- prometheus.MustNewConstMetric(c.deadlocks, prometheus.CounterValue, count)
@@ -132,24 +133,25 @@ func (c *InnoDBCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- pro
 	return nil
 }
 
-// deadlockCountFromEngineStatus extrai o número de deadlocks do texto de
-// SHOW ENGINE INNODB STATUS.
+// deadlockCountFromEngineStatus extracts the deadlock count from the
+// SHOW ENGINE INNODB STATUS text.
 //
-// O bloco LATEST DETECTED DEADLOCK não traz um contador acumulado; o que existe
-// é a contagem de deadlocks na seção TRANSACTIONS de alguns builds. Quando nada
-// utilizável é encontrado, devolve ok=false e nenhuma métrica é emitida.
+// The LATEST DETECTED DEADLOCK block does not carry a cumulative counter;
+// what exists is the deadlock count in the TRANSACTIONS section on some
+// builds. When nothing usable is found, it returns ok=false and no metric is
+// emitted.
 func (c *InnoDBCollector) deadlockCountFromEngineStatus(ctx context.Context, db *sql.DB) (float64, bool) {
 	var engineType, name, status sql.NullString
 
 	row := db.QueryRowContext(ctx, "SHOW ENGINE INNODB STATUS")
 	if err := row.Scan(&engineType, &name, &status); err != nil {
-		_ = level.Debug(c.Logger()).Log("msg", "SHOW ENGINE INNODB STATUS indisponível", "err", err)
+		_ = level.Debug(c.Logger()).Log("msg", "SHOW ENGINE INNODB STATUS unavailable", "err", err)
 		return 0, false
 	}
 
 	for _, line := range strings.Split(status.String, "\n") {
 		trimmed := strings.TrimSpace(line)
-		// Formato observado: "Number of deadlocks 12"
+		// Observed format: "Number of deadlocks 12"
 		if !strings.HasPrefix(strings.ToLower(trimmed), "number of deadlocks") {
 			continue
 		}

@@ -14,26 +14,26 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// Custom metrics: robustez contra YAML hostil ou malformado
+// Custom metrics: robustness against hostile or malformed YAML
 //
-// O arquivo de custom metrics é fornecido pelo operador, mas erros nele não
-// devem derrubar o processo do exporter em runtime — devem falhar no startup
-// (erro de configuração) ou ser ignorados no scrape.
+// The custom metrics file is provided by the operator, but errors in it must
+// not bring down the exporter process at runtime — they should fail at
+// startup (configuration error) or be ignored during the scrape.
 // ---------------------------------------------------------------------------
 
-// Uma métrica cujo nome não é um identificador Prometheus válido faria
-// prometheus.NewDesc gerar um Desc inválido, e MustNewConstMetric entraria em
-// pânico durante o scrape — derrubando o exporter inteiro por causa de um YAML
-// mal preenchido. A validação precisa acontecer no load.
+// A metric whose name is not a valid Prometheus identifier would make
+// prometheus.NewDesc generate an invalid Desc, and MustNewConstMetric would
+// panic during the scrape — bringing down the entire exporter because of a
+// badly filled-out YAML. Validation needs to happen at load time.
 func TestCustomMetricsRejectsInvalidMetricName(t *testing.T) {
 	cases := []struct {
 		name       string
 		metricName string
 	}{
-		{"com hifen", "mariadb-invalido"},
-		{"com espaco", "mariadb invalido"},
-		{"comecando com digito", "1mariadb"},
-		{"com ponto", "mariadb.invalido"},
+		{"with hyphen", "mariadb-invalido"},
+		{"with space", "mariadb invalido"},
+		{"starting with digit", "1mariadb"},
+		{"with dot", "mariadb.invalido"},
 	}
 
 	for _, tc := range cases {
@@ -46,12 +46,12 @@ func TestCustomMetricsRejectsInvalidMetricName(t *testing.T) {
         usage: "GAUGE"
 `)
 			_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
-			require.Error(t, err, "nome de métrica inválido deveria ser rejeitado no load, não em runtime")
+			require.Error(t, err, "invalid metric name should be rejected at load time, not at runtime")
 		})
 	}
 }
 
-// Mesmo raciocínio para nomes de label inválidos.
+// Same reasoning for invalid label names.
 func TestCustomMetricsRejectsInvalidLabelName(t *testing.T) {
 	path := writeTempYAML(t, `
 mariadb_teste:
@@ -63,11 +63,11 @@ mariadb_teste:
         usage: "GAUGE"
 `)
 	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
-	require.Error(t, err, "nome de label inválido deveria ser rejeitado no load")
+	require.Error(t, err, "invalid label name should be rejected at load time")
 }
 
-// Uma mesma coluna declarada duas vezes como LABEL gera labels duplicados no
-// Desc, o que faz o client_golang entrar em pânico ao construir a métrica.
+// The same column declared twice as LABEL generates duplicate labels in the
+// Desc, which makes client_golang panic when building the metric.
 func TestCustomMetricsRejectsDuplicateLabels(t *testing.T) {
 	path := writeTempYAML(t, `
 mariadb_teste:
@@ -81,11 +81,11 @@ mariadb_teste:
         usage: "GAUGE"
 `)
 	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
-	require.Error(t, err, "label duplicado deveria ser rejeitado no load")
+	require.Error(t, err, "duplicate label should be rejected at load time")
 }
 
-// Uma coluna declarada ao mesmo tempo como LABEL e como valor é ambígua e
-// também produziria um Desc inconsistente.
+// A column declared simultaneously as LABEL and as a value is ambiguous and
+// would also produce an inconsistent Desc.
 func TestCustomMetricsRejectsColumnAsBothLabelAndValue(t *testing.T) {
 	path := writeTempYAML(t, `
 mariadb_teste:
@@ -97,16 +97,16 @@ mariadb_teste:
         usage: "GAUGE"
 `)
 	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
-	require.Error(t, err, "coluna usada como label e valor deveria ser rejeitada")
+	require.Error(t, err, "column used as both label and value should be rejected")
 }
 
-// Duas métricas com nomes que colidem após a sufixação de coluna produziriam
-// séries com o mesmo nome e conjuntos de label diferentes — o registry do
-// Prometheus rejeita isso no scrape.
+// Two metrics whose names collide after column suffixing would produce series
+// with the same name and different label sets — the Prometheus registry
+// rejects this during the scrape.
 func TestCustomMetricsCollectDoesNotPanicOnHostileYAML(t *testing.T) {
-	// Este YAML passa pela validação de estrutura mas tem uma query que devolve
-	// uma coluna a mais do que o declarado: o código precisa lidar com isso sem
-	// pânico de índice.
+	// This YAML passes structural validation but has a query that returns one
+	// more column than declared: the code needs to handle this without an
+	// index panic.
 	path := writeTempYAML(t, `
 mariadb_extra_colunas:
   query: SELECT 'a' AS c, 1 AS total, 'sobrando' AS extra
@@ -128,15 +128,15 @@ mariadb_extra_colunas:
 	require.NotPanics(t, func() {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
-		// Colunas não declaradas são simplesmente ignoradas.
+		// Undeclared columns are simply ignored.
 		require.Len(t, metrics, 1)
 	})
 }
 
-// Valores de label vindos do banco podem conter UTF-8 inválido (por exemplo, um
-// blob binário numa coluna usada como label). O formato de exposição do
-// Prometheus exige UTF-8 válido; bytes inválidos corrompem a saída de /metrics
-// para todos os scrapes.
+// Label values coming from the database may contain invalid UTF-8 (for
+// example, a binary blob in a column used as a label). The Prometheus
+// exposition format requires valid UTF-8; invalid bytes corrupt the /metrics
+// output for every scrape.
 func TestCustomMetricsHandlesInvalidUTF8InLabels(t *testing.T) {
 	path := writeTempYAML(t, `
 mariadb_utf8_teste:
@@ -152,7 +152,7 @@ mariadb_utf8_teste:
 	require.NoError(t, err)
 
 	db, mock := newMockDB(t)
-	// 0xff isolado não é UTF-8 válido.
+	// An isolated 0xff is not valid UTF-8.
 	mock.ExpectQuery("SELECT 'x'").WillReturnRows(
 		sqlmock.NewRows([]string{"c", "total"}).AddRow([]byte{0xff, 0xfe, 0x41}, 1),
 	)
@@ -161,13 +161,13 @@ mariadb_utf8_teste:
 	require.NoError(t, err)
 	require.Len(t, metrics, 1)
 
-	// A métrica precisa ser serializável: labels com UTF-8 inválido devem ter
-	// sido sanitizados antes de virarem label.
+	// The metric needs to be serializable: labels with invalid UTF-8 must have
+	// been sanitized before becoming a label.
 	snaps := snapshot(t, metrics)
 	for _, s := range snaps {
 		for k, v := range s.Labels {
 			require.True(t, isValidUTF8(v),
-				"label %q tem UTF-8 inválido (%q), o que corrompe a saída de /metrics", k, v)
+				"label %q has invalid UTF-8 (%q), which corrupts the /metrics output", k, v)
 		}
 	}
 }
@@ -176,18 +176,18 @@ func isValidUTF8(s string) bool {
 	return strings.ToValidUTF8(s, "�") == s
 }
 
-// Um arquivo de custom metrics gigantesco não deve travar o startup nem
-// consumir memória sem limite.
+// A gigantic custom metrics file should not hang startup nor consume
+// unbounded memory.
 func TestCustomMetricsHandlesEmptyYAML(t *testing.T) {
 	path := writeTempYAML(t, "")
 
 	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
-	require.NoError(t, err, "YAML vazio não é erro, apenas não define métricas")
+	require.NoError(t, err, "empty YAML is not an error, it just defines no metrics")
 	require.Empty(t, c.metrics)
 }
 
-// YAML com estrutura totalmente diferente do esperado (lista no lugar de mapa)
-// deve dar erro claro em vez de pânico.
+// A YAML with a structure entirely different from expected (a list instead of
+// a map) should give a clear error instead of a panic.
 func TestCustomMetricsRejectsWrongTopLevelType(t *testing.T) {
 	path := writeTempYAML(t, "- isso\n- e\n- uma\n- lista\n")
 
@@ -196,14 +196,15 @@ func TestCustomMetricsRejectsWrongTopLevelType(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Limites de tablestat/indexstat: injeção via LIMIT
+// tablestat/indexstat limits: LIMIT injection
 //
-// Os limites entram na query via fmt.Sprintf. Valores extremos ou negativos não
-// devem gerar SQL inválido.
+// The limits go into the query via fmt.Sprintf. Extreme or negative values
+// must not generate invalid SQL.
 // ---------------------------------------------------------------------------
 
-// Um limite negativo produziria "LIMIT -1", que é erro de sintaxe no MariaDB.
-// O código já normaliza <= 0 para o padrão; este teste fixa esse contrato.
+// A negative limit would produce "LIMIT -1", which is a syntax error in
+// MariaDB. The code already normalizes <= 0 to the default; this test pins
+// down that contract.
 func TestTableStatNegativeLimitFallsBackToDefault(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -233,32 +234,32 @@ func TestIndexStatNegativeLimitFallsBackToDefault(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Robustez de parsing contra dados hostis do servidor
+// Parsing robustness against hostile server data
 // ---------------------------------------------------------------------------
 
-// strconv.ParseFloat aceita "NaN", "Inf" e "infinity", mas nenhum é um valor de
-// métrica útil: NaN desaparece dos gráficos e faz comparações de alerta
-// falharem em silêncio, e Inf distorce agregações. parseFloat precisa recusá-los
-// para que o coletor omita a métrica em vez de expor lixo.
+// strconv.ParseFloat accepts "NaN", "Inf" and "infinity", but none of these is
+// a useful metric value: NaN disappears from graphs and makes alert
+// comparisons fail silently, and Inf distorts aggregations. parseFloat needs
+// to reject them so the collector omits the metric instead of exposing junk.
 func TestParseFloatRejectsNonFiniteValues(t *testing.T) {
 	for _, s := range []string{"NaN", "nan", "Inf", "+Inf", "-Inf", "infinity", "-infinity"} {
 		_, err := parseFloat(s)
-		require.Error(t, err, "parseFloat(%q) deveria ser recusado", s)
+		require.Error(t, err, "parseFloat(%q) should be rejected", s)
 	}
 
-	// Também nos tipos numéricos nativos que o driver pode devolver.
+	// Also for the native numeric types the driver may return.
 	_, err := parseFloat(math.NaN())
-	require.Error(t, err, "float64 NaN deveria ser recusado")
+	require.Error(t, err, "float64 NaN should be rejected")
 
 	_, err = parseFloat(math.Inf(1))
-	require.Error(t, err, "float64 +Inf deveria ser recusado")
+	require.Error(t, err, "float64 +Inf should be rejected")
 
 	_, err = parseFloat(float32(math.Inf(-1)))
-	require.Error(t, err, "float32 -Inf deveria ser recusado")
+	require.Error(t, err, "float32 -Inf should be rejected")
 }
 
-// Um valor não finito no SHOW GLOBAL STATUS deve fazer a métrica ser omitida,
-// não exposta como NaN.
+// A non-finite value in SHOW GLOBAL STATUS should make the metric be omitted,
+// not exposed as NaN.
 func TestGlobalStatusOmitsNonFiniteValues(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -275,27 +276,27 @@ func TestGlobalStatusOmitsNonFiniteValues(t *testing.T) {
 
 	snaps := snapshot(t, metrics)
 	for _, s := range snaps {
-		require.False(t, math.IsNaN(s.Value), "métrica %s exposta como NaN", s.Name)
-		require.False(t, math.IsInf(s.Value, 0), "métrica %s exposta como Inf", s.Name)
+		require.False(t, math.IsNaN(s.Value), "metric %s exposed as NaN", s.Name)
+		require.False(t, math.IsInf(s.Value, 0), "metric %s exposed as Inf", s.Name)
 	}
 
-	// A variável válida continua sendo exportada.
+	// The valid variable keeps being exported.
 	require.Len(t, snaps, 1)
 	require.Equal(t, float64(42), requireMetric(t, snaps, "mariadb_questions_total", nil).Value)
 }
 
-// Valores gigantes em colunas de contador não devem causar overflow silencioso
-// para negativo.
+// Huge values in counter columns must not cause a silent overflow into
+// negative.
 func TestParseFloatVeryLargeValues(t *testing.T) {
-	// Maior uint64 — comum em contadores que dão wrap no MariaDB.
+	// Largest uint64 — common in counters that wrap around in MariaDB.
 	v, err := parseFloat("18446744073709551615")
 	require.NoError(t, err)
-	require.Positive(t, v, "contador máximo não deve virar negativo")
+	require.Positive(t, v, "maximum counter should not become negative")
 }
 
-// O coletor de QRT converte float para uint64. Um COUNT negativo (impossível na
-// prática, mas defensivo) causaria um wrap gigantesco nas contagens do
-// histograma, quebrando as queries de rate().
+// The QRT collector converts float to uint64. A negative COUNT (impossible in
+// practice, but defensive) would cause a huge wraparound in the histogram
+// counts, breaking rate() queries.
 func TestQueryResponseTimeIgnoresNegativeCount(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -310,22 +311,22 @@ func TestQueryResponseTimeIgnoresNegativeCount(t *testing.T) {
 	require.NoError(t, err)
 
 	if len(metrics) == 0 {
-		t.Skip("nenhuma métrica emitida")
+		t.Skip("no metric emitted")
 	}
 
 	h := snapshot(t, metrics)[0]
-	// Se o -5 virou uint64, SampleCount fica astronomicamente grande.
+	// If the -5 turned into uint64, SampleCount becomes astronomically large.
 	require.Less(t, h.SampleCount, uint64(1000),
-		"COUNT negativo virou wrap de uint64: SampleCount=%d", h.SampleCount)
+		"negative COUNT wrapped around as uint64: SampleCount=%d", h.SampleCount)
 
 	for bound, count := range h.Buckets {
 		require.Less(t, count, uint64(1000),
-			"bucket le=%v com contagem absurda %d (wrap de uint64)", bound, count)
+			"bucket le=%v with absurd count %d (uint64 wraparound)", bound, count)
 	}
 }
 
-// Buckets duplicados na tabela de QRT (mesmo TIME em duas linhas) não devem
-// gerar um histograma inconsistente.
+// Duplicate buckets in the QRT table (same TIME in two rows) must not
+// generate an inconsistent histogram.
 func TestQueryResponseTimeDuplicateBuckets(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -345,11 +346,11 @@ func TestQueryResponseTimeDuplicateBuckets(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Registro concorrente / uso do canal
+// Concurrent registration / channel usage
 // ---------------------------------------------------------------------------
 
-// Um coletor que devolve muitas linhas não deve bloquear indefinidamente se o
-// contexto for cancelado.
+// A collector that returns many rows must not block indefinitely if the
+// context is canceled.
 func TestCollectRespectsContextCancellation(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -358,31 +359,31 @@ func TestCollectRespectsContextCancellation(t *testing.T) {
 	)
 
 	ctx, cancel := context.WithCancel(context.Background())
-	cancel() // já cancelado
+	cancel() // already canceled
 
 	c := NewGlobalStatusCollector(true, testLogger(), allFeatures())
 	ch := make(chan prometheus.Metric, 10)
 
-	// Não deve travar nem entrar em pânico com contexto já cancelado.
+	// Must not hang or panic with an already-canceled context.
 	require.NotPanics(t, func() {
 		_ = c.Collect(ctx, db, ch)
 	})
 }
 
 // ---------------------------------------------------------------------------
-// Path traversal / leitura de arquivo
+// Path traversal / file reading
 // ---------------------------------------------------------------------------
 
-// Caminho de custom metrics apontando para um diretório deve dar erro claro.
+// A custom metrics path pointing to a directory should give a clear error.
 func TestCustomMetricsPathIsDirectory(t *testing.T) {
 	dir := t.TempDir()
 
 	_, err := NewCustomMetricsCollector([]string{dir}, testLogger(), allFeatures(), nil)
-	require.Error(t, err, "diretório no lugar de arquivo deveria dar erro")
+	require.Error(t, err, "a directory instead of a file should give an error")
 }
 
-// Arquivo inexistente já é coberto, mas um caminho com bytes nulos pode causar
-// comportamento estranho no syscall.
+// A nonexistent file is already covered, but a path with null bytes can cause
+// strange syscall behavior.
 func TestCustomMetricsPathWithNullByte(t *testing.T) {
 	_, err := NewCustomMetricsCollector(
 		[]string{filepath.Join(os.TempDir(), "arquivo\x00malicioso.yml")},
@@ -391,10 +392,10 @@ func TestCustomMetricsPathWithNullByte(t *testing.T) {
 	require.Error(t, err)
 }
 
-// As custom metrics precisam carregar as mesmas ConstLabels de integração com o
-// PMM que as métricas nativas. Sem isso, um painel filtrando por cluster ou
-// service_name não encontraria a série — o dado existiria mas ficaria invisível
-// no dashboard.
+// Custom metrics need to carry the same PMM integration ConstLabels as the
+// native metrics. Without this, a panel filtering by cluster or service_name
+// would not find the series — the data would exist but be invisible on the
+// dashboard.
 func TestCustomMetricsCarryPMMConstLabels(t *testing.T) {
 	path := writeTempYAML(t, `
 mariadb_teste_labels:

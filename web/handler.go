@@ -1,5 +1,5 @@
-// Package web contém os handlers HTTP do exporter: /metrics, /health e a página
-// de índice.
+// Package web contains the exporter's HTTP handlers: /metrics, /health, and
+// the index page.
 package web
 
 import (
@@ -16,15 +16,15 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// healthTimeout limita o ping usado pelo endpoint /health.
+// healthTimeout limits the ping used by the /health endpoint.
 const healthTimeout = 5 * time.Second
 
-// Pinger é implementado pelo exporter e usado pelo /health para checar a conexão.
+// Pinger is implemented by the exporter and used by /health to check the connection.
 type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
-// Options configura o mux HTTP.
+// Options configures the HTTP mux.
 type Options struct {
 	TelemetryPath string
 	MaxRequests   int
@@ -34,7 +34,7 @@ type Options struct {
 	Logger        log.Logger
 }
 
-// NewHandler monta o mux com /metrics, /health e a página de índice.
+// NewHandler assembles the mux with /metrics, /health, and the index page.
 func NewHandler(opts Options) http.Handler {
 	mux := http.NewServeMux()
 
@@ -56,8 +56,8 @@ func NewHandler(opts Options) http.Handler {
 	return mux
 }
 
-// healthHandler responde 200 quando o banco está acessível e 503 caso contrário
-// (seção 2.3).
+// healthHandler responds 200 when the database is reachable and 503
+// otherwise (section 2.3).
 func healthHandler(pinger Pinger, logger log.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -66,7 +66,7 @@ func healthHandler(pinger Pinger, logger log.Logger) http.HandlerFunc {
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status":  "error",
-				"message": "exporter não inicializado",
+				"message": "exporter not initialized",
 			})
 			return
 		}
@@ -75,14 +75,15 @@ func healthHandler(pinger Pinger, logger log.Logger) http.HandlerFunc {
 		defer cancel()
 
 		if err := pinger.Ping(ctx); err != nil {
-			// O detalhe do erro fica só no log: /health não tem autenticação, e
-			// a mensagem do driver pode conter o DSN inteiro (com senha) ou
-			// revelar endereços e portas da rede interna.
-			_ = level.Warn(logger).Log("msg", "health check falhou", "err", err)
+			// The error detail stays only in the log: /health has no
+			// authentication, and the driver's message may contain the full
+			// DSN (with password) or reveal internal network addresses and
+			// ports.
+			_ = level.Warn(logger).Log("msg", "health check failed", "err", err)
 			w.WriteHeader(http.StatusServiceUnavailable)
 			_ = json.NewEncoder(w).Encode(map[string]string{
 				"status":  "error",
-				"message": "banco de dados inacessível; consulte os logs do exporter",
+				"message": "database unreachable; check the exporter logs",
 			})
 			return
 		}
@@ -93,7 +94,7 @@ func healthHandler(pinger Pinger, logger log.Logger) http.HandlerFunc {
 }
 
 var indexTmpl = template.Must(template.New("index").Parse(`<!doctype html>
-<html lang="pt-br">
+<html lang="en">
 <head><meta charset="utf-8"><title>MariaDB Exporter</title>
 <style>
 body{font-family:system-ui,sans-serif;margin:2rem auto;max-width:44rem;line-height:1.5;color:#1b1b1b}
@@ -101,10 +102,10 @@ a{color:#0b6bcb}code{background:#f2f2f2;padding:.1rem .3rem;border-radius:3px}
 </style></head>
 <body>
 <h1>MariaDB Exporter</h1>
-<p>Versão <code>{{.Version}}</code></p>
+<p>Version <code>{{.Version}}</code></p>
 <ul>
-  <li><a href="{{.TelemetryPath}}">{{.TelemetryPath}}</a> — métricas Prometheus</li>
-  <li><a href="/health">/health</a> — status da conexão com o banco</li>
+  <li><a href="{{.TelemetryPath}}">{{.TelemetryPath}}</a> — Prometheus metrics</li>
+  <li><a href="/health">/health</a> — database connection status</li>
 </ul>
 </body>
 </html>
@@ -124,7 +125,7 @@ func indexHandler(telemetryPath, version string) http.HandlerFunc {
 	}
 }
 
-// promLogger adapta o log.Logger do go-kit à interface esperada por promhttp.
+// promLogger adapts go-kit's log.Logger to the interface expected by promhttp.
 type promLogger struct {
 	logger log.Logger
 }

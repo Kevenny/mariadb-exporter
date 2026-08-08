@@ -15,8 +15,8 @@ SELECT CLIENT,
        ROWS_SENT
 FROM information_schema.CLIENT_STATISTICS`
 
-// ClientStatCollector coleta information_schema.CLIENT_STATISTICS, agregando por
-// host/IP de origem. Requer `SET GLOBAL userstat = ON`.
+// ClientStatCollector collects information_schema.CLIENT_STATISTICS,
+// aggregating by source host/IP. Requires `SET GLOBAL userstat = ON`.
 type ClientStatCollector struct {
 	base
 
@@ -25,27 +25,27 @@ type ClientStatCollector struct {
 	rowsSent         *prometheus.Desc
 }
 
-// NewClientStatCollector cria o coletor clientstat.
+// NewClientStatCollector creates the clientstat collector.
 func NewClientStatCollector(enabled bool, logger log.Logger, features FeatureProvider) *ClientStatCollector {
 	labels := []string{"client"}
 	return &ClientStatCollector{
-		base: newBase("clientstat", "Estatísticas por cliente de information_schema.CLIENT_STATISTICS (requer userstat=ON).", enabled, logger, features),
+		base: newBase("clientstat", "Per-client statistics from information_schema.CLIENT_STATISTICS (requires userstat=ON).", enabled, logger, features),
 
-		totalConnections: newDesc("client", "total_connections_total", "Total de conexões originadas do cliente.", labels),
-		rowsRead:         newDesc("client", "rows_read_total", "Total de linhas lidas pelo cliente.", labels),
-		rowsSent:         newDesc("client", "rows_sent_total", "Total de linhas enviadas ao cliente.", labels),
+		totalConnections: newDesc("client", "total_connections_total", "Total connections originating from the client.", labels),
+		rowsRead:         newDesc("client", "rows_read_total", "Total rows read by the client.", labels),
+		rowsSent:         newDesc("client", "rows_sent_total", "Total rows sent to the client.", labels),
 	}
 }
 
-// Available implementa Availability: depende da variável userstat.
+// Available implements Availability: depends on the userstat variable.
 func (c *ClientStatCollector) Available() bool {
 	return c.featureFlags().HasUserStat
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 func (c *ClientStatCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	if !c.Available() {
-		c.warned.warn("msg", "userstat está OFF; nenhuma métrica será coletada. Habilite com SET GLOBAL userstat = ON")
+		c.warned.warn("msg", "userstat is OFF; no metrics will be collected. Enable with SET GLOBAL userstat = ON")
 		return nil
 	}
 

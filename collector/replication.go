@@ -10,12 +10,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// ReplicationCollector coleta o estado das réplicas.
+// ReplicationCollector collects replica state.
 //
-// O MariaDB suporta replicação multi-source nativa, então a fonte primária é
-// SHOW ALL SLAVES STATUS, que devolve uma linha por conexão de replicação. Em
-// servidores muito antigos (ou builds sem o comando) há fallback para
-// SHOW SLAVE STATUS, que devolve no máximo uma linha (seção 2.2, replication).
+// MariaDB supports native multi-source replication, so the primary source is
+// SHOW ALL SLAVES STATUS, which returns one row per replication connection.
+// On very old servers (or builds without the command) there is a fallback to
+// SHOW SLAVE STATUS, which returns at most one row (section 2.2, replication).
 type ReplicationCollector struct {
 	base
 
@@ -26,25 +26,25 @@ type ReplicationCollector struct {
 	relayLogPos         *prometheus.Desc
 }
 
-// NewReplicationCollector cria o coletor replication.
+// NewReplicationCollector creates the replication collector.
 func NewReplicationCollector(enabled bool, logger log.Logger, features FeatureProvider) *ReplicationCollector {
 	labels := []string{"connection_name", "master_host", "master_port"}
 	return &ReplicationCollector{
-		base: newBase("replication", "Estado da replicação via SHOW ALL SLAVES STATUS (suporta multi-source).", enabled, logger, features),
+		base: newBase("replication", "Replication state via SHOW ALL SLAVES STATUS (supports multi-source).", enabled, logger, features),
 
-		sqlRunning:          newDesc("slave", "sql_running", "1 se a thread SQL da réplica está rodando, 0 caso contrário.", labels),
-		ioRunning:           newDesc("slave", "io_running", "1 se a thread de I/O da réplica está rodando, 0 caso contrário.", labels),
-		secondsBehindMaster: newDesc("slave", "seconds_behind_master", "Atraso da réplica em relação ao master em segundos.", labels),
-		lastErrno:           newDesc("slave", "last_errno", "Código do último erro da réplica (0 = sem erro).", labels),
-		relayLogPos:         newDesc("slave", "relay_log_pos", "Posição atual no relay log.", labels),
+		sqlRunning:          newDesc("slave", "sql_running", "1 if the replica's SQL thread is running, 0 otherwise.", labels),
+		ioRunning:           newDesc("slave", "io_running", "1 if the replica's I/O thread is running, 0 otherwise.", labels),
+		secondsBehindMaster: newDesc("slave", "seconds_behind_master", "Replica lag relative to the master, in seconds.", labels),
+		lastErrno:           newDesc("slave", "last_errno", "Code of the replica's last error (0 = no error).", labels),
+		relayLogPos:         newDesc("slave", "relay_log_pos", "Current position in the relay log.", labels),
 	}
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 func (c *ReplicationCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	rows, err := db.QueryContext(ctx, "SHOW ALL SLAVES STATUS")
 	if err != nil {
-		_ = level.Debug(c.Logger()).Log("msg", "SHOW ALL SLAVES STATUS indisponível, usando SHOW SLAVE STATUS", "err", err)
+		_ = level.Debug(c.Logger()).Log("msg", "SHOW ALL SLAVES STATUS unavailable, using SHOW SLAVE STATUS", "err", err)
 
 		rows, err = db.QueryContext(ctx, "SHOW SLAVE STATUS")
 		if err != nil {
@@ -58,9 +58,9 @@ func (c *ReplicationCollector) Collect(ctx context.Context, db *sql.DB, ch chan<
 		return err
 	}
 
-	// O conjunto de colunas varia bastante entre versões do MariaDB, por isso a
-	// leitura é feita em um mapa indexado pelo nome da coluna em minúsculas em
-	// vez de posições fixas.
+	// The column set varies quite a bit across MariaDB versions, so reading is
+	// done into a map indexed by the lowercase column name instead of fixed
+	// positions.
 	for rows.Next() {
 		values := make([]sql.RawBytes, len(columns))
 		scanArgs := make([]interface{}, len(columns))
@@ -77,8 +77,8 @@ func (c *ReplicationCollector) Collect(ctx context.Context, db *sql.DB, ch chan<
 			row[strings.ToLower(col)] = string(values[i])
 		}
 
-		// Sem Connection_name (single-source ou fallback), o label fica vazio,
-		// que é o identificador da conexão default no MariaDB.
+		// Without Connection_name (single-source or fallback), the label is
+		// left empty, which is the default connection identifier in MariaDB.
 		connectionName := row["connection_name"]
 		masterHost := row["master_host"]
 		masterPort := row["master_port"]
@@ -88,20 +88,20 @@ func (c *ReplicationCollector) Collect(ctx context.Context, db *sql.DB, ch chan<
 		emitBool(ch, c.sqlRunning, row["slave_sql_running"], labels...)
 		emitBool(ch, c.ioRunning, row["slave_io_running"], labels...)
 
-		// Seconds_Behind_Master é NULL quando a replicação está parada; nesse
-		// caso a métrica é omitida em vez de reportar 0, que seria lido como
-		// "réplica em dia".
+		// Seconds_Behind_Master is NULL when replication is stopped; in that
+		// case the metric is omitted instead of reporting 0, which would be
+		// read as "replica up to date".
 		emitNumeric(ch, c.secondsBehindMaster, row["seconds_behind_master"], prometheus.GaugeValue, labels...)
 		emitNumeric(ch, c.lastErrno, row["last_errno"], prometheus.GaugeValue, labels...)
 		emitNumeric(ch, c.relayLogPos, row["relay_log_pos"], prometheus.GaugeValue, labels...)
 	}
 
-	// Zero linhas significa que a instância não é réplica: nenhuma métrica e
-	// nenhum erro (seção 20, replicação com 0, 1 ou N slaves).
+	// Zero rows means the instance is not a replica: no metric and no error
+	// (section 20, replication with 0, 1 or N slaves).
 	return rows.Err()
 }
 
-// emitBool converte Yes/No/ON/OFF em 1/0.
+// emitBool converts Yes/No/ON/OFF to 1/0.
 func emitBool(ch chan<- prometheus.Metric, desc *prometheus.Desc, raw string, labels ...string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -115,7 +115,8 @@ func emitBool(ch chan<- prometheus.Metric, desc *prometheus.Desc, raw string, la
 	case "NO", "OFF", "0", "FALSE":
 		value = 0
 	case "CONNECTING":
-		// Connecting não é "rodando": a thread existe mas ainda não replica.
+		// Connecting is not "running": the thread exists but is not yet
+		// replicating.
 		value = 0
 	default:
 		return
@@ -124,8 +125,8 @@ func emitBool(ch chan<- prometheus.Metric, desc *prometheus.Desc, raw string, la
 	ch <- prometheus.MustNewConstMetric(desc, prometheus.GaugeValue, value, sanitizeLabels(labels)...)
 }
 
-// emitNumeric envia o valor se ele for numérico; strings vazias e NULL são
-// silenciosamente ignoradas.
+// emitNumeric sends the value if it is numeric; empty strings and NULL are
+// silently ignored.
 func emitNumeric(ch chan<- prometheus.Metric, desc *prometheus.Desc, raw string, kind prometheus.ValueType, labels ...string) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" || strings.EqualFold(raw, "NULL") {

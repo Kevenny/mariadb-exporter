@@ -44,7 +44,7 @@
   "panels": [
     {
       "id": 1,
-      "title": "Instâncias UP",
+      "title": "Instances UP",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -52,7 +52,7 @@
     },
     {
       "id": 2,
-      "title": "Instâncias DOWN",
+      "title": "Instances DOWN",
       "type": "stat",
       "gridPos": { "h": 4, "w": 4, "x": 4, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -61,7 +61,7 @@
     },
     {
       "id": 3,
-      "title": "mariadb_up por instância",
+      "title": "mariadb_up by instance",
       "type": "table",
       "gridPos": { "h": 6, "w": 16, "x": 8, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -69,7 +69,7 @@
     },
     {
       "id": 4,
-      "title": "Connections por instância",
+      "title": "Connections by instance",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -79,7 +79,7 @@
     },
     {
       "id": 5,
-      "title": "Questions / Slow queries por instância",
+      "title": "Questions / Slow queries by instance",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 6 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -90,7 +90,7 @@
     },
     {
       "id": 6,
-      "title": "Latência média (ms) — sum/count do histograma QRT",
+      "title": "Average latency (ms) — sum/count of the QRT histogram",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -105,7 +105,7 @@
     },
     {
       "id": 7,
-      "title": "P99 de latência (histograma real)",
+      "title": "P99 latency (real histogram)",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -120,7 +120,7 @@
     },
     {
       "id": 8,
-      "title": "Top 10 usuários por linhas lidas",
+      "title": "Top 10 users by rows read",
       "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -135,7 +135,7 @@
     },
     {
       "id": 9,
-      "title": "Top 10 tabelas por linhas lidas",
+      "title": "Top 10 tables by rows read",
       "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 22 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -150,7 +150,7 @@
     },
     {
       "id": 10,
-      "title": "Índices sem uso por instância",
+      "title": "Unused indexes by instance",
       "type": "table",
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 30 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -165,7 +165,7 @@
     },
     {
       "id": 11,
-      "title": "Uso de disco (%) por instância",
+      "title": "Disk usage (%) by instance",
       "type": "timeseries",
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 30 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -180,7 +180,7 @@
     },
     {
       "id": 12,
-      "title": "Replicação — atraso (seconds_behind_master)",
+      "title": "Replication — lag (seconds_behind_master)",
       "type": "timeseries",
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 36 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -195,7 +195,7 @@
     },
     {
       "id": 13,
-      "title": "Metadata locks ativos",
+      "title": "Active metadata locks",
       "type": "timeseries",
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 36 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// O plugin DISKS reporta em kibibytes; o exporter expõe bytes.
+// The DISKS plugin reports in kibibytes; the exporter exposes bytes.
 func TestDisksCollector(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -63,7 +63,7 @@ func TestMetadataLocksCollector(t *testing.T) {
 
 	snaps := snapshot(t, metrics)
 
-	// Duas linhas idênticas são agregadas em uma série com valor 2.
+	// Two identical rows are aggregated into a single series with value 2.
 	shared := map[string]string{
 		"lock_mode": "MDL_SHARED_READ", "lock_type": "Table metadata lock",
 		"table_schema": "vendas", "table_name": "pedidos",
@@ -75,7 +75,7 @@ func TestMetadataLocksCollector(t *testing.T) {
 	require.Equal(t, float64(1), requireMetric(t, snaps, "mariadb_metadata_locks_total", exclusive).Value)
 }
 
-// Locks cujo modo indica espera devem aparecer também na métrica de waiting.
+// Locks whose mode indicates waiting should also appear in the waiting metric.
 func TestMetadataLocksCollectorWaiting(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -106,7 +106,8 @@ func TestMetadataLocksCollectorPluginInactive(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Locks que não são de tabela (GLOBAL, SCHEMA) vêm com schema/table vazios.
+// Locks that are not table-scoped (GLOBAL, SCHEMA) come with empty
+// schema/table.
 func TestMetadataLocksCollectorGlobalLock(t *testing.T) {
 	db, mock := newMockDB(t)
 

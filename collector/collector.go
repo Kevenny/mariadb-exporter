@@ -1,5 +1,5 @@
-// Package collector contém a interface Collector e a implementação de todos os
-// coletores de métricas do MariaDB.
+// Package collector contains the Collector interface and the implementation of
+// all MariaDB metric collectors.
 package collector
 
 import (
@@ -17,35 +17,36 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// Namespace é o prefixo de todas as métricas expostas pelo exporter.
+// Namespace is the prefix of every metric exposed by the exporter.
 const Namespace = "mariadb"
 
-// Collector é a interface que todo coletor deve implementar.
+// Collector is the interface every collector must implement.
 type Collector interface {
-	// Name retorna o nome do coletor (usado em flags e logs).
+	// Name returns the collector's name (used in flags and logs).
 	Name() string
 
-	// Help retorna a descrição do coletor para --help.
+	// Help returns the collector's description for --help.
 	Help() string
 
-	// Enabled retorna se o coletor está habilitado (baseado em flags).
+	// Enabled returns whether the collector is enabled (based on flags).
 	Enabled() bool
 
-	// Collect executa as queries e envia as métricas para o channel.
+	// Collect runs the queries and sends the metrics to the channel.
 	Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error
 }
 
-// VersionInfo contém informações de versão detectadas na conexão.
+// VersionInfo contains version information detected on the connection.
 type VersionInfo struct {
 	Major     int
 	Minor     int
 	Patch     int
-	Full      string // string completa, ex: "11.4.3-MariaDB"
-	Comment   string // valor de @@version_comment
+	Full      string // full string, e.g.: "11.4.3-MariaDB"
+	Comment   string // value of @@version_comment
 	IsMariaDB bool
 }
 
-// AtLeast informa se a versão detectada é maior ou igual a major.minor.patch.
+// AtLeast reports whether the detected version is greater than or equal to
+// major.minor.patch.
 func (v *VersionInfo) AtLeast(major, minor, patch int) bool {
 	if v == nil {
 		return false
@@ -59,43 +60,43 @@ func (v *VersionInfo) AtLeast(major, minor, patch int) bool {
 	return v.Patch >= patch
 }
 
-// String devolve a versão em formato major.minor.patch.
+// String returns the version formatted as major.minor.patch.
 func (v *VersionInfo) String() string {
 	if v == nil {
-		return "desconhecida"
+		return "unknown"
 	}
 	return fmt.Sprintf("%d.%d.%d", v.Major, v.Minor, v.Patch)
 }
 
-// FeatureFlags indica quais recursos estão disponíveis nesta instância.
+// FeatureFlags indicates which features are available on this instance.
 type FeatureFlags struct {
-	HasUserStat          bool // userstat plugin ativo
-	HasQueryResponseTime bool // query_response_time plugin ativo
-	HasMetadataLockInfo  bool // metadata_lock_info plugin ativo
-	HasDisksPlugin       bool // disks plugin ativo
-	HasGalera            bool // Galera/wsrep ativo
-	IsReplica            bool // instância é réplica
+	HasUserStat          bool // userstat plugin active
+	HasQueryResponseTime bool // query_response_time plugin active
+	HasMetadataLockInfo  bool // metadata_lock_info plugin active
+	HasDisksPlugin       bool // disks plugin active
+	HasGalera            bool // Galera/wsrep active
+	IsReplica            bool // instance is a replica
 }
 
-// FeatureProvider entrega a visão mais recente das features detectadas. O
-// exporter atualiza essa visão periodicamente (seção 9 da especificação), por
-// isso os coletores consultam através desta interface em vez de guardar uma
-// cópia do struct.
+// FeatureProvider delivers the most recent view of the detected features. The
+// exporter refreshes this view periodically (section 9 of the specification),
+// which is why collectors query through this interface instead of keeping a
+// copy of the struct.
 type FeatureProvider interface {
 	Features() *FeatureFlags
 	Version() *VersionInfo
 }
 
-// Availability é implementada por coletores que dependem de um plugin ou
-// variável de ambiente do servidor. O exporter usa o resultado para publicar
-// mariadb_collector_available{collector="nome"}.
+// Availability is implemented by collectors that depend on a plugin or a
+// server environment variable. The exporter uses the result to publish
+// mariadb_collector_available{collector="name"}.
 type Availability interface {
-	// Available informa se as dependências do coletor estão satisfeitas.
+	// Available reports whether the collector's dependencies are satisfied.
 	Available() bool
 }
 
-// warnOnce emite um aviso apenas na primeira ocorrência, evitando poluir o log a
-// cada scrape quando um plugin está permanentemente ausente (seção 9, item 1).
+// warnOnce emits a warning only on the first occurrence, avoiding log spam on
+// every scrape when a plugin is permanently absent (section 9, item 1).
 type warnOnce struct {
 	once   sync.Once
 	logger log.Logger
@@ -110,8 +111,9 @@ func (w *warnOnce) warn(keyvals ...interface{}) {
 	})
 }
 
-// base fornece a implementação comum de Name, Help e Enabled, além do logger e
-// do acesso às features detectadas. Todos os coletores embutem este struct.
+// base provides the common implementation of Name, Help and Enabled, plus the
+// logger and access to the detected features. All collectors embed this
+// struct.
 type base struct {
 	name     string
 	help     string
@@ -138,7 +140,7 @@ func (b *base) Help() string       { return b.help }
 func (b *base) Enabled() bool      { return b.enabled }
 func (b *base) Logger() log.Logger { return b.logger }
 
-// featureFlags devolve as features atuais, nunca nil, para simplificar o uso.
+// featureFlags returns the current features, never nil, to simplify usage.
 func (b *base) featureFlags() *FeatureFlags {
 	if b.features == nil {
 		return &FeatureFlags{}
@@ -149,8 +151,8 @@ func (b *base) featureFlags() *FeatureFlags {
 	return &FeatureFlags{}
 }
 
-// newDesc é um atalho para prometheus.NewDesc com o namespace do exporter já
-// aplicado. Se subsystem for vazio, o nome fica namespace_name.
+// newDesc is a shortcut for prometheus.NewDesc with the exporter's namespace
+// already applied. If subsystem is empty, the name becomes namespace_name.
 func newDesc(subsystem, name, help string, labels []string) *prometheus.Desc {
 	return prometheus.NewDesc(
 		prometheus.BuildFQName(Namespace, subsystem, name),
@@ -160,19 +162,19 @@ func newDesc(subsystem, name, help string, labels []string) *prometheus.Desc {
 	)
 }
 
-// utf8Replacement substitui cada byte inválido em um label. O caractere de
-// substituição do Unicode deixa evidente no dashboard que o dado de origem está
-// corrompido, em vez de escondê-lo.
+// utf8Replacement replaces each invalid byte in a label. The Unicode
+// replacement character makes it evident in the dashboard that the source
+// data is corrupted, instead of hiding it.
 const utf8Replacement = "�"
 
-// sanitizeLabel garante que o valor possa ser usado como label do Prometheus.
+// sanitizeLabel ensures the value can be used as a Prometheus label.
 //
-// O client_golang entra em pânico ao construir uma métrica cujo label não é
-// UTF-8 válido, e um pânico dentro do Collect derruba o processo inteiro do
-// exporter. Isso é perfeitamente alcançável em produção: nomes de usuário,
-// schema, tabela ou índice gravados em latin1, ou um blob binário numa coluna
-// usada como label em custom metrics. Trocar os bytes inválidos preserva a
-// métrica e mantém o exporter no ar.
+// client_golang panics when building a metric whose label is not valid UTF-8,
+// and a panic inside Collect brings down the entire exporter process. This is
+// perfectly reachable in production: usernames, schema, table or index names
+// stored in latin1, or a binary blob in a column used as a label in custom
+// metrics. Replacing the invalid bytes preserves the metric and keeps the
+// exporter running.
 func sanitizeLabel(value string) string {
 	if utf8.ValidString(value) {
 		return value
@@ -180,8 +182,8 @@ func sanitizeLabel(value string) string {
 	return strings.ToValidUTF8(value, utf8Replacement)
 }
 
-// sanitizeLabels aplica sanitizeLabel a todos os valores informados, devolvendo
-// o mesmo slice quando nada precisa ser alterado.
+// sanitizeLabels applies sanitizeLabel to all given values, returning the same
+// slice when nothing needs to be changed.
 func sanitizeLabels(values []string) []string {
 	needsFix := false
 	for _, v := range values {
@@ -201,21 +203,21 @@ func sanitizeLabels(values []string) []string {
 	return out
 }
 
-// parseFloat converte para float64 os diversos formatos que o driver MySQL pode
-// devolver (nil, []byte, string, números). Valores não numéricos retornam erro.
+// parseFloat converts to float64 the various formats the MySQL driver may
+// return (nil, []byte, string, numbers). Non-numeric values return an error.
 func parseFloat(value interface{}) (float64, error) {
 	switch v := value.(type) {
 	case nil:
-		return 0, fmt.Errorf("valor nulo")
+		return 0, fmt.Errorf("null value")
 	case float64:
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			return 0, fmt.Errorf("valor não finito")
+			return 0, fmt.Errorf("non-finite value")
 		}
 		return v, nil
 	case float32:
 		f := float64(v)
 		if math.IsNaN(f) || math.IsInf(f, 0) {
-			return 0, fmt.Errorf("valor não finito")
+			return 0, fmt.Errorf("non-finite value")
 		}
 		return f, nil
 	case int:
@@ -236,16 +238,16 @@ func parseFloat(value interface{}) (float64, error) {
 		}
 		return 0, nil
 	default:
-		return 0, fmt.Errorf("tipo não numérico %T", value)
+		return 0, fmt.Errorf("non-numeric type %T", value)
 	}
 }
 
-// parseFloatString interpreta strings numéricas e também os valores booleanos
-// textuais que o MariaDB usa em variáveis e em SHOW STATUS.
+// parseFloatString parses numeric strings as well as the textual boolean
+// values that MariaDB uses in variables and in SHOW STATUS.
 func parseFloatString(s string) (float64, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return 0, fmt.Errorf("string vazia")
+		return 0, fmt.Errorf("empty string")
 	}
 	switch strings.ToUpper(s) {
 	case "ON", "YES", "TRUE", "ENABLED":
@@ -255,29 +257,29 @@ func parseFloatString(s string) (float64, error) {
 	}
 	f, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		return 0, fmt.Errorf("valor não numérico %q", s)
+		return 0, fmt.Errorf("non-numeric value %q", s)
 	}
-	// ParseFloat aceita "NaN", "Inf" e "infinity". Nenhum deles é um valor de
-	// métrica útil: NaN some dos gráficos e faz comparações de alerta falharem
-	// silenciosamente, e Inf distorce qualquer agregação. Melhor tratar como
-	// valor inválido e omitir a métrica.
+	// ParseFloat accepts "NaN", "Inf" and "infinity". None of these is a useful
+	// metric value: NaN disappears from graphs and makes alert comparisons fail
+	// silently, and Inf distorts any aggregation. Better to treat it as an
+	// invalid value and omit the metric.
 	if math.IsNaN(f) || math.IsInf(f, 0) {
-		return 0, fmt.Errorf("valor não finito %q", s)
+		return 0, fmt.Errorf("non-finite value %q", s)
 	}
 	return f, nil
 }
 
-// Registry mantém a lista de coletores construídos e disponíveis ao exporter.
+// Registry keeps the list of collectors built and available to the exporter.
 type Registry struct {
 	collectors []Collector
 }
 
-// NewRegistry cria um registry vazio.
+// NewRegistry creates an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{}
 }
 
-// Register adiciona coletores ao registry, ignorando valores nil.
+// Register adds collectors to the registry, ignoring nil values.
 func (r *Registry) Register(collectors ...Collector) {
 	for _, c := range collectors {
 		if c != nil {
@@ -286,14 +288,14 @@ func (r *Registry) Register(collectors ...Collector) {
 	}
 }
 
-// All devolve todos os coletores registrados.
+// All returns all registered collectors.
 func (r *Registry) All() []Collector {
 	out := make([]Collector, len(r.collectors))
 	copy(out, r.collectors)
 	return out
 }
 
-// Enabled devolve apenas os coletores habilitados por flag.
+// Enabled returns only the collectors enabled via flag.
 func (r *Registry) Enabled() []Collector {
 	var out []Collector
 	for _, c := range r.collectors {
@@ -304,7 +306,7 @@ func (r *Registry) Enabled() []Collector {
 	return out
 }
 
-// Names devolve os nomes de todos os coletores registrados.
+// Names returns the names of all registered collectors.
 func (r *Registry) Names() []string {
 	out := make([]string, 0, len(r.collectors))
 	for _, c := range r.collectors {

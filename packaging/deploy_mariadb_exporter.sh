@@ -1,34 +1,33 @@
 #!/bin/bash
 # deploy_mariadb_exporter.sh
 #
-# Instala e registra o mariadb_exporter em um servidor MariaDB como serviço
-# systemd, e o registra no PMM como External Service (ver
-# mariadb_exporter_pmm_integration.md, seções 6 e 7).
+# Installs and registers mariadb_exporter on a MariaDB server as a systemd
+# service, and registers it with PMM as an External Service (see
+# mariadb_exporter_pmm_integration.md, sections 6 and 7).
 #
-# Executar como root em cada servidor MariaDB, a partir do diretório raiz do
-# repositório (espera encontrar ./bin/mariadb_exporter já compilado via
-# `make build`).
+# Run as root on each MariaDB server, from the repository's root directory
+# (expects to find ./bin/mariadb_exporter already built via `make build`).
 #
-# Uso:
-#   MARIADB_DSN="mariadb://mariadb_exporter:SENHA@tcp(localhost:3306)/" \
+# Usage:
+#   MARIADB_DSN="mariadb://mariadb_exporter:PASSWORD@tcp(localhost:3306)/" \
 #     ./packaging/deploy_mariadb_exporter.sh
 #
-# Nota de segurança: o DSN chega por variável de ambiente e fica visível em
-# /proc/<pid>/environ enquanto o script roda, além de entrar no histórico do
-# shell. Em ambientes compartilhados, prefira exportar a variável de um arquivo
-# com permissão restrita (`set -a; . /root/.mariadb_dsn; set +a`) ou usar um
-# gerenciador de segredos, em vez de digitar a senha na linha de comando.
+# Security note: the DSN arrives via environment variable and stays visible in
+# /proc/<pid>/environ while the script runs, and also lands in the shell
+# history. In shared environments, prefer exporting the variable from a file
+# with restricted permissions (`set -a; . /root/.mariadb_dsn; set +a`) or use a
+# secrets manager, instead of typing the password on the command line.
 #
-# Variáveis de ambiente aceitas (todas opcionais exceto MARIADB_DSN):
-#   MARIADB_DSN        DSN de conexão do exporter (obrigatória)
-#   EXPORTER_VERSION    Versão exibida em logs (default: dev)
-#   EXPORTER_USER       Usuário de sistema do serviço (default: mariadb_exporter)
-#   EXPORTER_PORT       Porta de escuta (default: 9104)
-#   PMM_CLUSTER         --pmm.cluster (default: vazio — sem agrupamento)
+# Accepted environment variables (all optional except MARIADB_DSN):
+#   MARIADB_DSN         Exporter connection DSN (required)
+#   EXPORTER_VERSION    Version shown in logs (default: dev)
+#   EXPORTER_USER       Service system user (default: mariadb_exporter)
+#   EXPORTER_PORT       Listen port (default: 9104)
+#   PMM_CLUSTER         --pmm.cluster (default: empty — no grouping)
 #   PMM_ENV             --pmm.environment (default: production)
-#   PMM_REPLICATION_SET --pmm.replication-set (default: vazio)
-#   WEB_CONFIG_FILE     --web.config.file para TLS/basic auth (default: vazio =
-#                       HTTP sem autenticação). Ver packaging/web-config.yml.example
+#   PMM_REPLICATION_SET --pmm.replication-set (default: empty)
+#   WEB_CONFIG_FILE     --web.config.file for TLS/basic auth (default: empty =
+#                       unauthenticated HTTP). See packaging/web-config.yml.example
 
 set -euo pipefail
 
@@ -39,49 +38,49 @@ PMM_CLUSTER="${PMM_CLUSTER:-}"
 PMM_ENV="${PMM_ENV:-production}"
 PMM_REPLICATION_SET="${PMM_REPLICATION_SET:-}"
 WEB_CONFIG_FILE="${WEB_CONFIG_FILE:-}"
-MARIADB_DSN="${MARIADB_DSN:?defina MARIADB_DSN antes de executar este script}"
+MARIADB_DSN="${MARIADB_DSN:?set MARIADB_DSN before running this script}"
 
 SERVICE_NAME="mariadb-$(hostname -s)"
 
 if [[ $EUID -ne 0 ]]; then
-    echo "este script precisa rodar como root" >&2
+    echo "this script needs to run as root" >&2
     exit 1
 fi
 
 if [[ ! -x ./bin/mariadb_exporter ]]; then
-    echo "binário ./bin/mariadb_exporter não encontrado; rode 'make build' antes" >&2
+    echo "binary ./bin/mariadb_exporter not found; run 'make build' first" >&2
     exit 1
 fi
 
-# 1. Criar usuário de sistema para o exporter
+# 1. Create the system user for the exporter
 if ! id "$EXPORTER_USER" &>/dev/null; then
     useradd --system --no-create-home --shell /sbin/nologin "$EXPORTER_USER"
 fi
 
-# 2. Instalar binário
+# 2. Install the binary
 install -o root -g root -m 0755 \
     ./bin/mariadb_exporter \
     /usr/local/bin/mariadb_exporter
 
-# 3. Criar diretório de configuração
+# 3. Create the configuration directory
 mkdir -p /etc/mariadb_exporter
 chmod 750 /etc/mariadb_exporter
 chown root:"$EXPORTER_USER" /etc/mariadb_exporter
 
-# 4. Criar arquivo de ambiente com o DSN.
+# 4. Create the environment file with the DSN.
 #
-# O arquivo contém a senha do usuário de monitoramento, então é criado já com a
-# permissão restrita: um `cat >` seguido de chmod deixaria uma janela em que o
-# arquivo fica legível conforme o umask (tipicamente 644), tempo suficiente para
-# outro processo local ler a credencial.
+# The file contains the monitoring user's password, so it's created already
+# with the restricted permission: a `cat >` followed by chmod would leave a
+# window where the file is readable per the umask (typically 644), long enough
+# for another local process to read the credential.
 ENV_FILE=/etc/mariadb_exporter/mariadb_exporter.env
 install -o root -g "$EXPORTER_USER" -m 0640 /dev/null "$ENV_FILE"
 cat > "$ENV_FILE" <<EOF
 MARIADB_DSN=${MARIADB_DSN}
 EOF
 
-# 5. Montar os argumentos de PMM condicionalmente — cluster e replication-set
-# são opcionais e não devem virar flags vazias no ExecStart.
+# 5. Assemble PMM arguments conditionally — cluster and replication-set are
+# optional and shouldn't turn into empty flags in ExecStart.
 PMM_ARGS="--pmm.environment=\"${PMM_ENV}\" --pmm.service-name=\"${SERVICE_NAME}\""
 if [[ -n "$PMM_CLUSTER" ]]; then
     PMM_ARGS="${PMM_ARGS} --pmm.cluster=\"${PMM_CLUSTER}\""
@@ -90,29 +89,29 @@ if [[ -n "$PMM_REPLICATION_SET" ]]; then
     PMM_ARGS="${PMM_ARGS} --pmm.replication-set=\"${PMM_REPLICATION_SET}\""
 fi
 
-# TLS/basic auth são opt-in via WEB_CONFIG_FILE. Quando ativos, o exporter passa
-# a servir HTTPS, então tanto o health check local quanto o registro no PMM
-# precisam usar o scheme correto.
+# TLS/basic auth are opt-in via WEB_CONFIG_FILE. When active, the exporter
+# starts serving HTTPS, so both the local health check and the PMM
+# registration need to use the right scheme.
 WEB_ARGS=""
 SCHEME="http"
 CURL_TLS_OPT=""
 if [[ -n "$WEB_CONFIG_FILE" ]]; then
     if [[ ! -r "$WEB_CONFIG_FILE" ]]; then
-        echo "WEB_CONFIG_FILE=$WEB_CONFIG_FILE não existe ou não é legível" >&2
+        echo "WEB_CONFIG_FILE=$WEB_CONFIG_FILE does not exist or is not readable" >&2
         exit 1
     fi
     WEB_ARGS="--web.config.file=\"${WEB_CONFIG_FILE}\""
-    # Só assume HTTPS se o arquivo realmente configurar TLS: o mesmo arquivo pode
-    # habilitar apenas basic auth, mantendo HTTP.
+    # Only assume HTTPS if the file actually configures TLS: the same file may
+    # enable only basic auth, keeping HTTP.
     if grep -qE "^[[:space:]]*tls_server_config:" "$WEB_CONFIG_FILE"; then
         SCHEME="https"
-        # O certificado pode ser autoassinado; a verificação fica a cargo de quem
-        # faz o scrape, não deste health check local.
+        # The certificate may be self-signed; verification is left to whoever
+        # does the scrape, not to this local health check.
         CURL_TLS_OPT="-k"
     fi
 fi
 
-# 6. Criar unit systemd
+# 6. Create the systemd unit
 cat > /etc/systemd/system/mariadb_exporter.service <<EOF
 [Unit]
 Description=MariaDB Exporter for Prometheus / PMM
@@ -141,36 +140,36 @@ ProtectSystem=strict
 WantedBy=multi-user.target
 EOF
 
-# 7. Ativar e iniciar
+# 7. Enable and start
 systemctl daemon-reload
 systemctl enable mariadb_exporter
 systemctl restart mariadb_exporter
 
-# 8. Verificar saúde antes de registrar no PMM — evita um "Connection check
-# failed" no pmm-admin quando o exporter ainda não subiu.
+# 8. Check health before registering with PMM — avoids a "Connection check
+# failed" from pmm-admin when the exporter hasn't come up yet.
 #
-# Com basic auth habilitado, o /health também exige credencial (o toolkit não
-# permite excluir paths), então um 401 aqui indica que o exporter está no ar e
-# respondendo — o que é suficiente para seguir com o registro.
+# With basic auth enabled, /health also requires a credential (the toolkit
+# doesn't allow excluding paths), so a 401 here indicates the exporter is up
+# and responding — which is enough to proceed with registration.
 sleep 2
 HEALTH_CODE=$(curl -s ${CURL_TLS_OPT} -o /dev/null -w "%{http_code}" \
     "${SCHEME}://localhost:${EXPORTER_PORT}/health" || echo "000")
 case "$HEALTH_CODE" in
     200)
-        echo "exporter saudável em ${SCHEME}://:${EXPORTER_PORT}"
+        echo "exporter healthy at ${SCHEME}://:${EXPORTER_PORT}"
         ;;
     401)
-        echo "exporter no ar em ${SCHEME}://:${EXPORTER_PORT} (401 — basic auth ativo, esperado)"
+        echo "exporter up at ${SCHEME}://:${EXPORTER_PORT} (401 — basic auth active, expected)"
         ;;
     *)
-        echo "exporter não respondeu em /health (HTTP ${HEALTH_CODE}); abortando registro no PMM" >&2
+        echo "exporter did not respond on /health (HTTP ${HEALTH_CODE}); aborting PMM registration" >&2
         systemctl status mariadb_exporter --no-pager || true
         exit 1
         ;;
 esac
 
-# 9. Registrar no PMM (idempotente: se o serviço já existir, o pmm-admin avisa
-# e o script não deve falhar por isso).
+# 9. Register with PMM (idempotent: if the service already exists, pmm-admin
+# warns and the script should not fail because of it).
 PMM_REGISTER_ARGS=(
     --service-name="${SERVICE_NAME}"
     --listen-port="${EXPORTER_PORT}"
@@ -184,15 +183,15 @@ PMM_REGISTER_ARGS=(
 
 if command -v pmm-admin &>/dev/null; then
     pmm-admin add external "${PMM_REGISTER_ARGS[@]}" || \
-        echo "aviso: pmm-admin add external falhou (talvez o serviço já exista) — verifique com 'pmm-admin list'" >&2
+        echo "warning: pmm-admin add external failed (the service may already exist) — check with 'pmm-admin list'" >&2
 
     if [[ -n "$WEB_CONFIG_FILE" ]] && grep -qE "^[[:space:]]*basic_auth_users:" "$WEB_CONFIG_FILE"; then
-        echo "ATENÇÃO: basic auth está ativo, mas 'pmm-admin add external' não aceita credenciais." >&2
-        echo "         Configure usuário e senha no serviço pelo PMM UI (Inventory > o serviço)," >&2
-        echo "         senão o scrape falhará com 401." >&2
+        echo "WARNING: basic auth is active, but 'pmm-admin add external' does not accept credentials." >&2
+        echo "         Configure the username and password on the service via the PMM UI (Inventory > the service)," >&2
+        echo "         otherwise the scrape will fail with 401." >&2
     fi
 else
-    echo "aviso: pmm-admin não encontrado neste host; pulei o registro no PMM" >&2
+    echo "warning: pmm-admin not found on this host; skipped PMM registration" >&2
 fi
 
-echo "deploy concluído em $(hostname) — versão ${EXPORTER_VERSION}, serviço ${SERVICE_NAME}"
+echo "deploy completed on $(hostname) — version ${EXPORTER_VERSION}, service ${SERVICE_NAME}"

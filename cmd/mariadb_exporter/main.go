@@ -1,6 +1,6 @@
-// Command mariadb_exporter expõe métricas de instâncias MariaDB no formato
-// Prometheus, incluindo os plugins e recursos exclusivos do MariaDB que o
-// mysqld_exporter não cobre.
+// Command mariadb_exporter exposes metrics of MariaDB instances in
+// Prometheus format, including the plugins and MariaDB-exclusive features
+// that mysqld_exporter does not cover.
 package main
 
 import (
@@ -29,26 +29,26 @@ import (
 	"github.com/Kevenny/mariadb-exporter/web"
 )
 
-// Preenchidos via -ldflags no build (ver Makefile).
+// Filled in via -ldflags at build time (see Makefile).
 var (
 	version   = "dev"
 	buildDate = "unknown"
 )
 
-// shutdownTimeout limita o encerramento gracioso do servidor HTTP.
+// shutdownTimeout limits the graceful shutdown of the HTTP server.
 const shutdownTimeout = 10 * time.Second
 
 func main() {
 	if err := run(); err != nil {
-		// O logger pode não existir ainda quando a falha é de configuração, por
-		// isso o erro fatal vai para stderr.
-		fmt.Fprintf(os.Stderr, "erro fatal: %v\n", err)
+		// The logger may not exist yet when the failure is a configuration
+		// one, so the fatal error goes to stderr.
+		fmt.Fprintf(os.Stderr, "fatal error: %v\n", err)
 		os.Exit(1)
 	}
 }
 
 func run() error {
-	app := kingpin.New("mariadb_exporter", "Exporter Prometheus dedicado ao MariaDB.")
+	app := kingpin.New("mariadb_exporter", "Prometheus exporter dedicated to MariaDB.")
 	app.HelpFlag.Short('h')
 	app.Version(fmt.Sprintf("mariadb_exporter %s (build %s, %s)", version, buildDate, runtime.Version()))
 
@@ -70,7 +70,7 @@ func run() error {
 	}
 
 	_ = level.Info(logger).Log(
-		"msg", "iniciando mariadb_exporter",
+		"msg", "starting mariadb_exporter",
 		"version", version,
 		"build_date", buildDate,
 		"go", runtime.Version(),
@@ -83,33 +83,34 @@ func run() error {
 	}
 	defer db.Close()
 
-	// Contexto raiz cancelado no sinal de término, usado pelo refresh de features.
+	// Root context canceled on the termination signal, used by the feature refresh.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	// Detecção de versão: instância que não é MariaDB é erro fatal de startup
-	// (seções 2.1 e 17).
+	// Version detection: an instance that isn't MariaDB is a fatal startup
+	// error (sections 2.1 and 17).
 	detectCtx, cancelDetect := context.WithTimeout(ctx, cfg.DataSource.Timeout)
 	defer cancelDetect()
 
 	versionInfo, err := exporter.DetectVersion(detectCtx, db)
 	if err != nil {
 		if errors.Is(err, exporter.ErrNotMariaDB) {
-			_ = level.Error(logger).Log("msg", "instância incompatível", "err", err)
+			_ = level.Error(logger).Log("msg", "incompatible instance", "err", err)
 		}
 		return err
 	}
 
 	_ = level.Info(logger).Log(
-		"msg", "MariaDB detectado",
+		"msg", "MariaDB detected",
 		"version", versionInfo.String(),
 		"version_full", versionInfo.Full,
 		"version_comment", versionInfo.Comment,
 	)
 
 	detector := exporter.NewFeatureDetector(db, versionInfo, logger)
-	// Primeiro refresh sincrono: os coletores já veem as features no scrape
-	// inicial em vez de reportarem indisponibilidade no primeiro /metrics.
+	// First synchronous refresh: the collectors already see the features on
+	// the initial scrape instead of reporting unavailability on the first
+	// /metrics.
 	detector.Refresh(detectCtx)
 	go detector.Run(ctx, exporter.FeatureRefreshInterval)
 
@@ -117,7 +118,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	_ = level.Info(logger).Log("msg", "coletores habilitados", "lista", fmt.Sprint(enabledNames(collectors)))
+	_ = level.Info(logger).Log("msg", "collectors enabled", "list", fmt.Sprint(enabledNames(collectors)))
 
 	exp := exporter.New(db, collectors, detector, cfg.PMM, logger)
 
@@ -146,14 +147,14 @@ func run() error {
 	errCh := make(chan error, 1)
 	go func() {
 		_ = level.Info(logger).Log(
-			"msg", "servidor HTTP escutando",
+			"msg", "HTTP server listening",
 			"addresses", fmt.Sprint(cfg.Web.ListenAddresses()),
 			"telemetry_path", cfg.Web.TelemetryPath,
 			"web_config_file", cfg.Web.WebConfigFile(),
 		)
-		// O toolkit cuida do endereço, do TLS e da autenticação a partir de
-		// --web.config.file; sem esse arquivo, o comportamento é HTTP simples,
-		// idêntico ao anterior.
+		// The toolkit handles the address, TLS, and authentication based on
+		// --web.config.file; without that file, the behavior is plain HTTP,
+		// identical to before.
 		if err := toolkitweb.ListenAndServe(server, cfg.Web.ToolkitFlags, logger); err != nil &&
 			!errors.Is(err, http.ErrServerClosed) {
 			errCh <- err
@@ -166,31 +167,31 @@ func run() error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		_ = level.Info(logger).Log("msg", "sinal recebido, encerrando")
+		_ = level.Info(logger).Log("msg", "signal received, shutting down")
 	}
 
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancelShutdown()
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
-		return fmt.Errorf("falha no shutdown do servidor HTTP: %w", err)
+		return fmt.Errorf("failed to shut down the HTTP server: %w", err)
 	}
 
 	return nil
 }
 
-// openDB abre o pool de conexões e valida a conectividade imediatamente, para
-// que um DSN errado falhe no startup e não no primeiro scrape.
+// openDB opens the connection pool and validates connectivity immediately,
+// so that a wrong DSN fails at startup and not on the first scrape.
 func openDB(dsn string, ds config.DataSource) (*sql.DB, error) {
 	db, err := sql.Open("mysql", dsn)
 	if err != nil {
-		return nil, fmt.Errorf("falha ao abrir conexão: %w", err)
+		return nil, fmt.Errorf("failed to open connection: %w", err)
 	}
 
 	db.SetMaxOpenConns(ds.MaxOpen)
 	db.SetMaxIdleConns(ds.MaxIdle)
-	// Reciclar conexões evita acumular sessões mortas quando o wait_timeout do
-	// servidor é menor que o intervalo entre scrapes.
+	// Recycling connections avoids accumulating dead sessions when the
+	// server's wait_timeout is shorter than the interval between scrapes.
 	db.SetConnMaxLifetime(5 * time.Minute)
 
 	ctx, cancel := context.WithTimeout(context.Background(), ds.Timeout)
@@ -198,13 +199,13 @@ func openDB(dsn string, ds config.DataSource) (*sql.DB, error) {
 
 	if err := db.PingContext(ctx); err != nil {
 		db.Close()
-		return nil, fmt.Errorf("falha ao conectar no MariaDB: %w", err)
+		return nil, fmt.Errorf("failed to connect to MariaDB: %w", err)
 	}
 
 	return db, nil
 }
 
-// buildCollectors instancia os coletores conforme as flags.
+// buildCollectors instantiates the collectors according to the flags.
 func buildCollectors(cfg *config.Config, logger log.Logger, detector *exporter.FeatureDetector) ([]collector.Collector, error) {
 	registry := collector.NewRegistry()
 
@@ -230,7 +231,7 @@ func buildCollectors(cfg *config.Config, logger log.Logger, detector *exporter.F
 			return nil, err
 		}
 		registry.Register(custom)
-		_ = level.Info(logger).Log("msg", "custom metrics carregadas", "arquivos", fmt.Sprint(cfg.CustomMetrics))
+		_ = level.Info(logger).Log("msg", "custom metrics loaded", "files", fmt.Sprint(cfg.CustomMetrics))
 	}
 
 	return registry.All(), nil
@@ -246,7 +247,7 @@ func enabledNames(cs []collector.Collector) []string {
 	return out
 }
 
-// newLogger monta o logger conforme --log.format e --log.level.
+// newLogger builds the logger according to --log.format and --log.level.
 func newLogger(cfg config.Log) log.Logger {
 	var logger log.Logger
 	if cfg.Format == "json" {

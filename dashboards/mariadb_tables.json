@@ -1,5 +1,5 @@
 {
-  "title": "MariaDB — Tabelas & Índices",
+  "title": "MariaDB — Tables & Indexes",
   "uid": "mariadb-tables-indexes",
   "timezone": "browser",
   "schemaVersion": 39,
@@ -14,7 +14,7 @@
     "from": "now-6h",
     "to": "now"
   },
-  "description": "Requer userstat=ON. Os coletores tablestat/indexstat aplicam limite por scrape (--collector.tablestat.limit, --collector.indexstat.limit), ordenando por rows_read DESC — então as tabelas e índices mais movimentados são sempre os preservados.",
+  "description": "Requires userstat=ON. The tablestat/indexstat collectors apply a per-scrape limit (--collector.tablestat.limit, --collector.indexstat.limit), sorting by rows_read DESC — so the busiest tables and indexes are always the ones kept.",
   "templating": {
     "list": [
       {
@@ -75,7 +75,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Índices sem uso",
+      "title": "Unused Indexes",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -87,7 +87,7 @@
     },
     {
       "id": 20,
-      "title": "Como ler esta seção",
+      "title": "How to read this section",
       "type": "text",
       "gridPos": {
         "h": 5,
@@ -97,13 +97,13 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "O `INDEX_STATISTICS` do MariaDB **só lista índices que já foram lidos ao menos uma vez**. Um índice nunca tocado desde o último restart não aparece na tabela — e portanto nunca aparece com `rows_read = 0`.\n\nNa prática isso significa que **`mariadb_index_unused` costuma ficar vazio**: ele só pega o caso específico de um índice já presente na tabela cujo contador está zerado.\n\nPara detectar os índices **realmente** órfãos, use a custom metric `mariadb_orphan_indexes`, já incluída em `custom_metrics/example.yml` — ela faz um `LEFT JOIN` entre os índices declarados (`STATISTICS`) e os que registraram leitura (`INDEX_STATISTICS`). Habilite com:\n\n```\nmariadb_exporter --custom-metrics=/etc/mariadb_exporter/example.yml\n```\n\nO painel *Índices órfãos por schema* abaixo consome essa métrica.\n\n> Só confie no resultado se o uptime cobrir um ciclo completo de negócio: um índice usado apenas no fechamento mensal parecerá órfão se o servidor reiniciou ontem. Confirme com o time de aplicação antes de remover."
+        "content": "MariaDB's `INDEX_STATISTICS` **only lists indexes that have been read at least once**. An index never touched since the last restart doesn't appear in the table — and therefore never shows up with `rows_read = 0`.\n\nIn practice this means **`mariadb_index_unused` is usually empty**: it only catches the specific case of an index already present in the table whose counter is at zero.\n\nTo detect indexes that are **truly** orphaned, use the `mariadb_orphan_indexes` custom metric, already included in `custom_metrics/example.yml` — it does a `LEFT JOIN` between the declared indexes (`STATISTICS`) and the ones that recorded reads (`INDEX_STATISTICS`). Enable it with:\n\n```\nmariadb_exporter --custom-metrics=/etc/mariadb_exporter/example.yml\n```\n\nThe *Orphan indexes by schema* panel below consumes this metric.\n\n> Only trust the result if uptime covers a full business cycle: an index used only during month-end closing will look orphaned if the server restarted yesterday. Confirm with the application team before removing."
       }
     },
     {
       "id": 1,
-      "title": "Total de índices sem uso (ver nota acima)",
-      "description": "Índices presentes no INDEX_STATISTICS com rows_read = 0. Costuma ser 0 porque índices nunca lidos não entram na tabela — leia o painel de nota acima.",
+      "title": "Total unused indexes (see note above)",
+      "description": "Indexes present in INDEX_STATISTICS with rows_read = 0. Usually 0 because never-read indexes don't enter the table — read the note panel above.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -145,8 +145,8 @@
     },
     {
       "id": 2,
-      "title": "Índices órfãos por schema (custom metric)",
-      "description": "Vem de mariadb_orphan_indexes (custom_metrics/example.yml): índices declarados que nunca registraram leitura. Este é o número confiável — a métrica nativa mariadb_index_unused não detecta índices jamais tocados.",
+      "title": "Orphan indexes by schema (custom metric)",
+      "description": "From mariadb_orphan_indexes (custom_metrics/example.yml): declared indexes that never recorded a read. This is the reliable number — the native mariadb_index_unused metric doesn't detect indexes that were never touched.",
       "type": "timeseries",
       "gridPos": {
         "h": 5,
@@ -181,8 +181,8 @@
     },
     {
       "id": 21,
-      "title": "Total de índices órfãos",
-      "description": "Soma de mariadb_orphan_indexes. Zero pode significar que a custom metric não está habilitada — confira o painel de nota.",
+      "title": "Total orphan indexes",
+      "description": "Sum of mariadb_orphan_indexes. Zero may mean the custom metric isn't enabled — check the note panel.",
       "type": "stat",
       "gridPos": {
         "h": 5,
@@ -215,8 +215,8 @@
     },
     {
       "id": 3,
-      "title": "Candidatos a remoção — índices sem nenhuma leitura",
-      "description": "Confirme com o time de aplicação antes de remover: o índice pode servir a uma rotina que roda menos vezes que o uptime do servidor (fechamento mensal, por exemplo). PRIMARY nunca deve ser removido.",
+      "title": "Removal candidates — indexes with no reads at all",
+      "description": "Confirm with the application team before removing: the index may serve a routine that runs less often than the server's uptime (e.g. month-end closing). PRIMARY must never be removed.",
       "type": "table",
       "gridPos": {
         "h": 10,
@@ -248,10 +248,10 @@
               "Value": true
             },
             "renameByName": {
-              "service_name": "Instância",
+              "service_name": "Instance",
               "schema": "Schema",
-              "table": "Tabela",
-              "index": "Índice"
+              "table": "Table",
+              "index": "Index"
             }
           }
         },
@@ -270,7 +270,7 @@
     },
     {
       "type": "row",
-      "title": "Tabelas mais acessadas",
+      "title": "Most Accessed Tables",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -282,7 +282,7 @@
     },
     {
       "id": 4,
-      "title": "Top 10 tabelas por leitura",
+      "title": "Top 10 tables by reads",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -309,7 +309,7 @@
     },
     {
       "id": 5,
-      "title": "Top 10 tabelas por escrita",
+      "title": "Top 10 tables by writes",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -336,8 +336,8 @@
     },
     {
       "id": 6,
-      "title": "Custo de índice na escrita (rows_changed_x_indexes / rows_changed)",
-      "description": "Quantos índices são efetivamente atualizados por linha alterada. Um valor alto numa tabela de escrita intensa indica que há índices demais encarecendo cada INSERT/UPDATE.",
+      "title": "Index cost on writes (rows_changed_x_indexes / rows_changed)",
+      "description": "How many indexes are effectively updated per changed row. A high value on a write-heavy table indicates too many indexes making every INSERT/UPDATE more expensive.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -364,8 +364,8 @@
     },
     {
       "id": 7,
-      "title": "Escrita amplificada por índices",
-      "description": "Total de atualizações de índice por segundo. É o custo real de manutenção dos índices na carga de escrita.",
+      "title": "Write amplification from indexes",
+      "description": "Total index updates per second. This is the real maintenance cost of indexes under write load.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -392,7 +392,7 @@
     },
     {
       "type": "row",
-      "title": "Índices em uso",
+      "title": "Indexes in Use",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -404,7 +404,7 @@
     },
     {
       "id": 8,
-      "title": "Top 10 índices por leitura",
+      "title": "Top 10 indexes by reads",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
@@ -431,7 +431,7 @@
     },
     {
       "id": 9,
-      "title": "Detalhe por tabela",
+      "title": "Detail by table",
       "type": "table",
       "gridPos": {
         "h": 9,
@@ -473,9 +473,9 @@
             },
             "renameByName": {
               "schema": "Schema",
-              "table": "Tabela",
-              "Value #READ": "Leituras/s",
-              "Value #WRITE": "Escritas/s"
+              "table": "Table",
+              "Value #READ": "Reads/s",
+              "Value #WRITE": "Writes/s"
             }
           }
         }

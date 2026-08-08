@@ -10,16 +10,16 @@ Type=simple
 User=mariadb_exporter
 Group=mariadb_exporter
 EnvironmentFile=-/etc/mariadb_exporter/mariadb_exporter.env
-# Para habilitar TLS e/ou basic auth, acrescente:
+# To enable TLS and/or basic auth, add:
 #   --web.config.file=/etc/mariadb_exporter/web-config.yml
-# (modelo em packaging/web-config.yml.example)
+# (template in packaging/web-config.yml.example)
 ExecStart=/usr/local/bin/mariadb_exporter \
   --web.listen-address=":9104" \
   --log.level=info
 Restart=on-failure
 RestartSec=5s
 
-# Hardening: o exporter só precisa de rede e leitura da própria configuração.
+# Hardening: the exporter only needs network access and to read its own configuration.
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict

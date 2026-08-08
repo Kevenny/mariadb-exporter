@@ -8,17 +8,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// diskQuery lê o plugin DISKS. Os valores de TOTAL, USED e AVAILABLE vêm em
-// kibibytes (1024 bytes) e são convertidos para bytes na exposição.
+// diskQuery reads the DISKS plugin. The TOTAL, USED and AVAILABLE values come
+// in kibibytes (1024 bytes) and are converted to bytes on exposure.
 const diskQuery = `
 SELECT Disk, Path, Total, Used, Available
 FROM information_schema.DISKS`
 
-// kibibyte é o fator de conversão dos valores do plugin DISKS para bytes.
+// kibibyte is the conversion factor from the DISKS plugin values to bytes.
 const kibibyte = 1024
 
-// DisksCollector expõe a ocupação dos filesystems vista pelo servidor.
-// Requer o plugin disks.
+// DisksCollector exposes filesystem usage as seen by the server.
+// Requires the disks plugin.
 type DisksCollector struct {
 	base
 
@@ -27,27 +27,27 @@ type DisksCollector struct {
 	available *prometheus.Desc
 }
 
-// NewDisksCollector cria o coletor disks.
+// NewDisksCollector creates the disks collector.
 func NewDisksCollector(enabled bool, logger log.Logger, features FeatureProvider) *DisksCollector {
 	labels := []string{"disk", "path"}
 	return &DisksCollector{
-		base: newBase("disks", "Uso de disco de information_schema.DISKS (requer o plugin disks).", enabled, logger, features),
+		base: newBase("disks", "Disk usage from information_schema.DISKS (requires the disks plugin).", enabled, logger, features),
 
-		total:     newDesc("disk", "total_bytes", "Capacidade total do filesystem em bytes.", labels),
-		used:      newDesc("disk", "used_bytes", "Bytes usados no filesystem.", labels),
-		available: newDesc("disk", "available_bytes", "Bytes disponíveis no filesystem.", labels),
+		total:     newDesc("disk", "total_bytes", "Total filesystem capacity in bytes.", labels),
+		used:      newDesc("disk", "used_bytes", "Bytes used on the filesystem.", labels),
+		available: newDesc("disk", "available_bytes", "Bytes available on the filesystem.", labels),
 	}
 }
 
-// Available implementa Availability: depende do plugin disks.
+// Available implements Availability: depends on the disks plugin.
 func (c *DisksCollector) Available() bool {
 	return c.featureFlags().HasDisksPlugin
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 func (c *DisksCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	if !c.Available() {
-		c.warned.warn("msg", "plugin disks inativo; nenhuma métrica será coletada")
+		c.warned.warn("msg", "disks plugin inactive; no metrics will be collected")
 		return nil
 	}
 
@@ -77,7 +77,7 @@ func (c *DisksCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prom
 	return rows.Err()
 }
 
-// scaleKiB converte um valor em kibibytes para bytes, preservando o estado NULL.
+// scaleKiB converts a value in kibibytes to bytes, preserving the NULL state.
 func scaleKiB(v sql.NullFloat64) sql.NullFloat64 {
 	if !v.Valid {
 		return v

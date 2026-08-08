@@ -1,5 +1,5 @@
-# Ambiente de desenvolvimento local: MariaDB 11.4 com os plugins exclusivos
-# habilitados + o exporter apontado para ele.
+# Local development environment: MariaDB 11.4 with the exclusive plugins
+# enabled + the exporter pointed at it.
 #
 #   docker compose up -d --build
 #   curl localhost:9104/metrics
@@ -15,9 +15,9 @@ services:
     ports:
       - "3306:3306"
     command:
-      # userstat alimenta os coletores userstat, tablestat, indexstat e clientstat.
+      # userstat feeds the userstat, tablestat, indexstat and clientstat collectors.
       - --userstat=1
-      # O plugin de tempo de resposta precisa ser carregado e ligado.
+      # The response time plugin needs to be loaded and turned on.
       - --plugin-load-add=query_response_time
       - --query-response-time-stats=ON
       - --plugin-load-add=metadata_lock_info
@@ -47,14 +47,14 @@ services:
       - "9104:9104"
     command:
       - --collector.galera
-      # Os dashboards filtram por cluster/environment/service_name; definir os
-      # metadados aqui faz as variáveis de template terem valores no ambiente
-      # de desenvolvimento, exercitando os filtros de verdade.
+      # The dashboards filter by cluster/environment/service_name; setting
+      # these metadata here gives the template variables real values in the
+      # development environment, exercising the filters for real.
       - --pmm.cluster=dev-cluster
       - --pmm.environment=dev
       - --pmm.service-name=mariadb-dev
-      # Habilita a custom metric mariadb_orphan_indexes, usada pelo dashboard
-      # "Tabelas & Índices" para detectar índices realmente sem uso.
+      # Enables the mariadb_orphan_indexes custom metric, used by the
+      # "Tables & Indexes" dashboard to detect truly unused indexes.
       - --custom-metrics=/custom_metrics/example.yml
     volumes:
       - ./custom_metrics:/custom_metrics:ro

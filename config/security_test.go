@@ -7,14 +7,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A senha do usuário de monitoramento é o segredo mais sensível que o exporter
-// manipula. Ela não pode escapar por nenhum canal observável: log de startup,
-// mensagem de erro de validação, ou a saída de --help.
+// The monitoring user's password is the most sensitive secret the exporter
+// handles. It must not escape through any observable channel: startup log,
+// validation error message, or --help output.
 
 const senhaSecreta = "S3nh4-Sup3r-S3cr3t4"
 
-// RedactDSN é a única barreira entre o DSN e os logs. Estes casos cobrem
-// formatos que poderiam escapar da heurística de mascaramento.
+// RedactDSN is the only barrier between the DSN and the logs. These cases
+// cover formats that could escape the masking heuristic.
 func TestRedactDSNNeverLeaksPassword(t *testing.T) {
 	cases := []string{
 		"mariadb://user:" + senhaSecreta + "@tcp(localhost:3306)/",
@@ -22,9 +22,9 @@ func TestRedactDSNNeverLeaksPassword(t *testing.T) {
 		"user:" + senhaSecreta + "@tcp(localhost:3306)/",
 		"mariadb://user:" + senhaSecreta + "@unix(/var/run/mysql/mysql.sock)/",
 		"mariadb://user:" + senhaSecreta + "@tcp(localhost:3306)/?timeout=30s",
-		// Senha contendo caracteres que confundem parsers de URL.
+		// Password containing characters that confuse URL parsers.
 		"mariadb://user:" + senhaSecreta + "@tcp(host:3306)/?tls=true&parseTime=true",
-		// Usuário com @ no nome (comum em contas de cloud).
+		// User with @ in the name (common in cloud accounts).
 		"mariadb://user@dominio:" + senhaSecreta + "@tcp(host:3306)/",
 	}
 
@@ -32,55 +32,56 @@ func TestRedactDSNNeverLeaksPassword(t *testing.T) {
 		t.Run(dsn[:min(28, len(dsn))], func(t *testing.T) {
 			redacted := RedactDSN(dsn)
 			require.NotContains(t, redacted, senhaSecreta,
-				"a senha vazou no DSN mascarado: %q", redacted)
+				"the password leaked in the masked DSN: %q", redacted)
 		})
 	}
 }
 
-// Uma senha que contenha ':' pode confundir a heurística que procura o
-// separador usuário:senha.
+// A password containing ':' can confuse the heuristic that looks for the
+// user:password separator.
 func TestRedactDSNPasswordWithColon(t *testing.T) {
 	dsn := "mariadb://user:parte1:parte2@tcp(localhost:3306)/"
 	redacted := RedactDSN(dsn)
 
 	require.NotContains(t, redacted, "parte2",
-		"parte da senha após o ':' vazou: %q", redacted)
+		"part of the password after the ':' leaked: %q", redacted)
 }
 
-// Erros de Validate não devem incluir o DSN completo — mensagens de erro vão
-// para o log e, em alguns setups, para sistemas de agregação.
+// Validate errors must not include the full DSN — error messages go to the
+// log and, in some setups, to aggregation systems.
 func TestValidateErrorDoesNotLeakPassword(t *testing.T) {
 	cfg := &Config{}
 	cfg.DataSource.Name = "mariadb://user:" + senhaSecreta + "@tcp(localhost:3306)/"
-	cfg.Collectors.TableStatLimit = -1 // força erro de validação
+	cfg.Collectors.TableStatLimit = -1 // forces a validation error
 
 	err := cfg.Validate()
 	require.Error(t, err)
 	require.NotContains(t, err.Error(), senhaSecreta,
-		"a senha vazou na mensagem de erro de validação: %q", err.Error())
+		"the password leaked in the validation error message: %q", err.Error())
 }
 
-// NormalizeDSN devolve o DSN em claro (é o que vai para o driver), mas seu erro
-// não deve ecoar o DSN inteiro.
+// NormalizeDSN returns the DSN in plaintext (that's what goes to the
+// driver), but its error must not echo the full DSN.
 func TestNormalizeDSNErrorDoesNotLeakPassword(t *testing.T) {
-	// Um DSN vazio é o único caminho de erro; confirma que a mensagem é genérica.
+	// An empty DSN is the only error path; confirms the message is generic.
 	_, err := NormalizeDSN("")
 	require.Error(t, err)
 	require.NotContains(t, strings.ToLower(err.Error()), "senha")
 }
 
-// O DSN normalizado precisa preservar a senha intacta — senão a conexão falha.
-// Este teste é o contraponto dos anteriores: mascarar é para log, não para uso.
+// The normalized DSN must preserve the password intact — otherwise the
+// connection fails. This test is the counterpart of the previous ones:
+// masking is for logging, not for use.
 func TestNormalizeDSNPreservesPassword(t *testing.T) {
 	dsn, err := NormalizeDSN("mariadb://user:" + senhaSecreta + "@tcp(localhost:3306)/")
 	require.NoError(t, err)
 	require.Contains(t, dsn, senhaSecreta,
-		"a senha precisa sobreviver à normalização, senão a conexão falha")
+		"the password needs to survive normalization, otherwise the connection fails")
 	require.Equal(t, "user:"+senhaSecreta+"@tcp(localhost:3306)/", dsn)
 }
 
-// ConstLabels do PMM vão para dentro de toda métrica exposta em /metrics, que é
-// um endpoint sem autenticação. Nenhum campo de PMM deve conter o DSN.
+// PMM's ConstLabels go into every metric exposed at /metrics, which is an
+// unauthenticated endpoint. No PMM field should contain the DSN.
 func TestPMMConstLabelsDoNotCarryCredentials(t *testing.T) {
 	pmm := PMM{
 		ServiceName: "mariadb-01",
@@ -89,8 +90,8 @@ func TestPMMConstLabelsDoNotCarryCredentials(t *testing.T) {
 	}
 
 	for k, v := range pmm.ConstLabels() {
-		require.NotContains(t, v, senhaSecreta, "label %q carrega credencial", k)
-		require.NotContains(t, v, "@tcp(", "label %q parece conter um DSN", k)
+		require.NotContains(t, v, senhaSecreta, "label %q carries a credential", k)
+		require.NotContains(t, v, "@tcp(", "label %q appears to contain a DSN", k)
 	}
 }
 

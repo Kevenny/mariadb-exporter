@@ -1,5 +1,5 @@
-// Package config concentra o parsing de flags de linha de comando e variáveis
-// de ambiente do mariadb_exporter, além da normalização do DSN.
+// Package config concentrates the parsing of command-line flags and
+// environment variables of mariadb_exporter, as well as DSN normalization.
 package config
 
 import (
@@ -14,22 +14,22 @@ import (
 	"github.com/prometheus/exporter-toolkit/web/kingpinflag"
 )
 
-// Web agrupa as configurações do servidor HTTP.
+// Web groups the HTTP server settings.
 //
-// O endereço de escuta, o arquivo de configuração de TLS/autenticação e o
-// socket activation do systemd ficam em ToolkitFlags, gerenciados pelo
-// exporter-toolkit da Prometheus — é ele quem implementa TLS e basic auth a
-// partir de --web.config.file.
+// The listen address, the TLS/authentication config file, and systemd socket
+// activation live in ToolkitFlags, managed by Prometheus's exporter-toolkit —
+// it is the one that implements TLS and basic auth based on
+// --web.config.file.
 type Web struct {
 	TelemetryPath string
 	MaxRequests   int
 
-	// ToolkitFlags carrega --web.listen-address (repetível),
-	// --web.config.file e --web.systemd-socket.
+	// ToolkitFlags carries --web.listen-address (repeatable),
+	// --web.config.file and --web.systemd-socket.
 	ToolkitFlags *web.FlagConfig
 }
 
-// ListenAddresses devolve os endereços de escuta configurados, para logging.
+// ListenAddresses returns the configured listen addresses, for logging.
 func (w Web) ListenAddresses() []string {
 	if w.ToolkitFlags == nil || w.ToolkitFlags.WebListenAddresses == nil {
 		return nil
@@ -37,7 +37,7 @@ func (w Web) ListenAddresses() []string {
 	return *w.ToolkitFlags.WebListenAddresses
 }
 
-// WebConfigFile devolve o caminho do arquivo de TLS/auth, ou string vazia.
+// WebConfigFile returns the path to the TLS/auth file, or an empty string.
 func (w Web) WebConfigFile() string {
 	if w.ToolkitFlags == nil || w.ToolkitFlags.WebConfigFile == nil {
 		return ""
@@ -45,7 +45,7 @@ func (w Web) WebConfigFile() string {
 	return *w.ToolkitFlags.WebConfigFile
 }
 
-// DataSource agrupa as configurações de conexão com o MariaDB.
+// DataSource groups the MariaDB connection settings.
 type DataSource struct {
 	Name    string
 	MaxOpen int
@@ -53,7 +53,7 @@ type DataSource struct {
 	Timeout time.Duration
 }
 
-// Collectors agrupa os toggles e limites de cada coletor.
+// Collectors groups the toggles and limits of each collector.
 type Collectors struct {
 	UserStat          bool
 	TableStat         bool
@@ -71,16 +71,16 @@ type Collectors struct {
 	GlobalVariables   bool
 }
 
-// Log agrupa as configurações de logging.
+// Log groups the logging settings.
 type Log struct {
 	Level  string
 	Format string
 }
 
-// PMM agrupa os metadados usados para popular ConstLabels quando o exporter é
-// integrado ao Percona PMM como External Service (ver
-// mariadb_exporter_pmm_integration.md, seção 3). Esses labels permitem que os
-// filtros de cluster/ambiente/serviço funcionem nos dashboards do PMM.
+// PMM groups the metadata used to populate ConstLabels when the exporter is
+// integrated with Percona PMM as an External Service (see
+// mariadb_exporter_pmm_integration.md, section 3). These labels allow the
+// cluster/environment/service filters to work in PMM dashboards.
 type PMM struct {
 	ServiceName    string
 	Cluster        string
@@ -88,7 +88,7 @@ type PMM struct {
 	ReplicationSet string
 }
 
-// Config é a configuração completa do exporter.
+// Config is the exporter's complete configuration.
 type Config struct {
 	Web           Web
 	DataSource    DataSource
@@ -98,9 +98,9 @@ type Config struct {
 	CustomMetrics []string
 }
 
-// defaultServiceName monta o valor padrão de --pmm.service-name a partir do
-// hostname da máquina. Se o hostname não puder ser obtido, cai para um valor
-// fixo em vez de deixar a flag sem default.
+// defaultServiceName builds the default value for --pmm.service-name from the
+// machine's hostname. If the hostname cannot be obtained, it falls back to a
+// fixed value instead of leaving the flag without a default.
 func defaultServiceName() string {
 	host, err := os.Hostname()
 	if err != nil || strings.TrimSpace(host) == "" {
@@ -109,15 +109,16 @@ func defaultServiceName() string {
 	return host + "-mariadb"
 }
 
-// ConstLabels monta as prometheus.Labels correspondentes aos metadados de
-// integração com o PMM (mariadb_exporter_pmm_integration.md, seção 3), prontas
-// para uso em ConstLabels de métricas. Campos vazios são omitidos: nem toda
-// instalação roda atrás de um PMM, e um label vazio poluiria a série à toa.
+// ConstLabels builds the prometheus.Labels corresponding to the PMM
+// integration metadata (mariadb_exporter_pmm_integration.md, section 3),
+// ready for use in metric ConstLabels. Empty fields are omitted: not every
+// installation runs behind a PMM, and an empty label would needlessly
+// pollute the series.
 //
-// O tipo de retorno é map[string]string em vez de prometheus.Labels para não
-// acoplar este pacote de configuração à biblioteca do Prometheus —
-// prometheus.Labels já é definido como esse mesmo tipo, então o valor serve
-// diretamente onde ConstLabels é esperado.
+// The return type is map[string]string instead of prometheus.Labels so as
+// not to couple this config package to the Prometheus library —
+// prometheus.Labels is already defined as this same type, so the value works
+// directly wherever ConstLabels is expected.
 func (p PMM) ConstLabels() map[string]string {
 	labels := map[string]string{}
 	if p.ServiceName != "" {
@@ -135,9 +136,10 @@ func (p PMM) ConstLabels() map[string]string {
 	return labels
 }
 
-// envDefault retorna o valor da primeira variável de ambiente definida entre as
-// informadas; caso nenhuma esteja definida, retorna fallback. Serve para dar às
-// flags um default proveniente do ambiente, conforme a seção 6 da especificação.
+// envDefault returns the value of the first defined environment variable
+// among those given; if none is defined, it returns fallback. This lets
+// flags have a default sourced from the environment, per section 6 of the
+// specification.
 func envDefault(fallback string, keys ...string) string {
 	for _, k := range keys {
 		if v := os.Getenv(k); v != "" {
@@ -147,135 +149,137 @@ func envDefault(fallback string, keys ...string) string {
 	return fallback
 }
 
-// Register declara todas as flags no app kingpin informado e devolve o Config
-// que será populado quando app.Parse for chamado.
+// Register declares all flags on the given kingpin app and returns the
+// Config that will be populated when app.Parse is called.
 func Register(app *kingpin.Application) *Config {
 	cfg := &Config{}
 
-	// O toolkit registra --web.listen-address (repetível), --web.config.file e,
-	// no Linux, --web.systemd-socket. É ele quem implementa TLS e basic auth.
+	// The toolkit registers --web.listen-address (repeatable),
+	// --web.config.file and, on Linux, --web.systemd-socket. It is the one
+	// that implements TLS and basic auth.
 	cfg.Web.ToolkitFlags = kingpinflag.AddFlags(app, envDefault(":9104", "MARIADB_WEB_LISTEN_ADDRESS"))
 
-	app.Flag("web.telemetry-path", "Path sob o qual as métricas são expostas.").
+	app.Flag("web.telemetry-path", "Path under which metrics are exposed.").
 		Default(envDefault("/metrics", "MARIADB_WEB_TELEMETRY_PATH")).
 		StringVar(&cfg.Web.TelemetryPath)
-	app.Flag("web.max-requests", "Máximo de scrapes simultâneos (0 = ilimitado).").
+	app.Flag("web.max-requests", "Maximum number of concurrent scrapes (0 = unlimited).").
 		Default(envDefault("0", "MARIADB_WEB_MAX_REQUESTS")).
 		IntVar(&cfg.Web.MaxRequests)
 
-	app.Flag("datasource.name", "DSN de conexão com o MariaDB (default: env MARIADB_DSN).").
+	app.Flag("datasource.name", "DSN for connecting to MariaDB (default: env MARIADB_DSN).").
 		Default(envDefault("", "MARIADB_DSN", "MARIADB_DATASOURCE_NAME")).
 		StringVar(&cfg.DataSource.Name)
-	app.Flag("datasource.max-open", "Máximo de conexões abertas no pool.").
+	app.Flag("datasource.max-open", "Maximum number of open connections in the pool.").
 		Default(envDefault("3", "MARIADB_DATASOURCE_MAX_OPEN")).
 		IntVar(&cfg.DataSource.MaxOpen)
-	app.Flag("datasource.max-idle", "Máximo de conexões idle no pool.").
+	app.Flag("datasource.max-idle", "Maximum number of idle connections in the pool.").
 		Default(envDefault("3", "MARIADB_DATASOURCE_MAX_IDLE")).
 		IntVar(&cfg.DataSource.MaxIdle)
-	app.Flag("datasource.timeout", "Timeout de query em segundos.").
+	app.Flag("datasource.timeout", "Query timeout in seconds.").
 		Default(envDefault("30s", "MARIADB_DATASOURCE_TIMEOUT")).
 		DurationVar(&cfg.DataSource.Timeout)
 
-	app.Flag("collector.userstat", "Habilita o coletor userstat.").
+	app.Flag("collector.userstat", "Enables the userstat collector.").
 		Default("true").BoolVar(&cfg.Collectors.UserStat)
-	app.Flag("collector.tablestat", "Habilita o coletor tablestat.").
+	app.Flag("collector.tablestat", "Enables the tablestat collector.").
 		Default("true").BoolVar(&cfg.Collectors.TableStat)
-	app.Flag("collector.tablestat.limit", "Limite de tabelas por scrape.").
+	app.Flag("collector.tablestat.limit", "Limit of tables per scrape.").
 		Default("500").IntVar(&cfg.Collectors.TableStatLimit)
-	app.Flag("collector.indexstat", "Habilita o coletor indexstat.").
+	app.Flag("collector.indexstat", "Enables the indexstat collector.").
 		Default("true").BoolVar(&cfg.Collectors.IndexStat)
-	app.Flag("collector.indexstat.limit", "Limite de índices por scrape.").
+	app.Flag("collector.indexstat.limit", "Limit of indexes per scrape.").
 		Default("1000").IntVar(&cfg.Collectors.IndexStatLimit)
-	app.Flag("collector.clientstat", "Habilita o coletor clientstat.").
+	app.Flag("collector.clientstat", "Enables the clientstat collector.").
 		Default("true").BoolVar(&cfg.Collectors.ClientStat)
-	app.Flag("collector.query_response_time", "Habilita o coletor query_response_time.").
+	app.Flag("collector.query_response_time", "Enables the query_response_time collector.").
 		Default("true").BoolVar(&cfg.Collectors.QueryResponseTime)
-	app.Flag("collector.metadata_locks", "Habilita o coletor metadata_locks.").
+	app.Flag("collector.metadata_locks", "Enables the metadata_locks collector.").
 		Default("true").BoolVar(&cfg.Collectors.MetadataLocks)
-	app.Flag("collector.disks", "Habilita o coletor disks.").
+	app.Flag("collector.disks", "Enables the disks collector.").
 		Default("true").BoolVar(&cfg.Collectors.Disks)
-	app.Flag("collector.replication", "Habilita o coletor replication.").
+	app.Flag("collector.replication", "Enables the replication collector.").
 		Default("true").BoolVar(&cfg.Collectors.Replication)
-	app.Flag("collector.galera", "Habilita o coletor galera (opt-in).").
+	app.Flag("collector.galera", "Enables the galera collector (opt-in).").
 		Default("false").BoolVar(&cfg.Collectors.Galera)
-	app.Flag("collector.innodb", "Habilita o coletor innodb.").
+	app.Flag("collector.innodb", "Enables the innodb collector.").
 		Default("true").BoolVar(&cfg.Collectors.InnoDB)
-	app.Flag("collector.global_status", "Habilita o coletor global_status.").
+	app.Flag("collector.global_status", "Enables the global_status collector.").
 		Default("true").BoolVar(&cfg.Collectors.GlobalStatus)
-	app.Flag("collector.global_variables", "Habilita o coletor global_variables.").
+	app.Flag("collector.global_variables", "Enables the global_variables collector.").
 		Default("true").BoolVar(&cfg.Collectors.GlobalVariables)
 
-	app.Flag("custom-metrics", "Arquivo YAML de custom metrics (repetível).").
-		PlaceHolder("ARQUIVO").StringsVar(&cfg.CustomMetrics)
+	app.Flag("custom-metrics", "YAML file of custom metrics (repeatable).").
+		PlaceHolder("FILE").StringsVar(&cfg.CustomMetrics)
 
-	app.Flag("pmm.service-name", "Nome do serviço no PMM inventory.").
+	app.Flag("pmm.service-name", "Service name in the PMM inventory.").
 		Default(envDefault(defaultServiceName(), "MARIADB_PMM_SERVICE_NAME")).
 		StringVar(&cfg.PMM.ServiceName)
-	app.Flag("pmm.cluster", "Nome do cluster para agrupamento no PMM.").
+	app.Flag("pmm.cluster", "Cluster name for grouping in PMM.").
 		Default(envDefault("", "MARIADB_PMM_CLUSTER")).
 		StringVar(&cfg.PMM.Cluster)
-	app.Flag("pmm.environment", "Ambiente para agrupamento no PMM (production, staging, dev).").
+	app.Flag("pmm.environment", "Environment for grouping in PMM (production, staging, dev).").
 		Default(envDefault("production", "MARIADB_PMM_ENVIRONMENT")).
 		StringVar(&cfg.PMM.Environment)
-	app.Flag("pmm.replication-set", "Nome do replication set no PMM (opcional).").
+	app.Flag("pmm.replication-set", "Replication set name in PMM (optional).").
 		Default(envDefault("", "MARIADB_PMM_REPLICATION_SET")).
 		StringVar(&cfg.PMM.ReplicationSet)
 
 	app.Flag("log.level", "Log level: debug, info, warn, error.").
 		Default(envDefault("info", "MARIADB_LOG_LEVEL")).
 		EnumVar(&cfg.Log.Level, "debug", "info", "warn", "error")
-	app.Flag("log.format", "Formato do log: text, json.").
+	app.Flag("log.format", "Log format: text, json.").
 		Default(envDefault("text", "MARIADB_LOG_FORMAT")).
 		EnumVar(&cfg.Log.Format, "text", "json")
 
 	return cfg
 }
 
-// Validate confere se a configuração mínima está presente.
+// Validate checks whether the minimum configuration is present.
 func (c *Config) Validate() error {
 	if strings.TrimSpace(c.DataSource.Name) == "" {
-		return fmt.Errorf("DSN não informado: use --datasource.name ou a variável de ambiente MARIADB_DSN")
+		return fmt.Errorf("DSN not provided: use --datasource.name or the MARIADB_DSN environment variable")
 	}
 	if _, err := NormalizeDSN(c.DataSource.Name); err != nil {
 		return err
 	}
 	if c.Collectors.TableStatLimit < 0 {
-		return fmt.Errorf("--collector.tablestat.limit não pode ser negativo")
+		return fmt.Errorf("--collector.tablestat.limit cannot be negative")
 	}
 	if c.Collectors.IndexStatLimit < 0 {
-		return fmt.Errorf("--collector.indexstat.limit não pode ser negativo")
+		return fmt.Errorf("--collector.indexstat.limit cannot be negative")
 	}
-	// Um --web.config.file inexistente, ilegível ou inválido é falha de
-	// configuração: melhor abortar no startup do que subir sem o
-	// TLS/autenticação que o operador pediu, achando que o endpoint está
-	// protegido. A validação do conteúdo é feita pelo próprio toolkit, e
-	// acontece aqui — antes de abrir o listener — para que o exporter não fique
-	// nem um instante escutando desprotegido.
+	// A --web.config.file that is missing, unreadable, or invalid is a
+	// configuration failure: better to abort at startup than to come up
+	// without the TLS/authentication the operator asked for, believing the
+	// endpoint is protected. Content validation is done by the toolkit
+	// itself, and it happens here — before opening the listener — so the
+	// exporter never spends even a moment listening unprotected.
 	if path := c.Web.WebConfigFile(); path != "" {
 		if _, err := os.Stat(path); err != nil {
-			return fmt.Errorf("--web.config.file %q inacessível: %w", path, err)
+			return fmt.Errorf("--web.config.file %q inaccessible: %w", path, err)
 		}
 		if err := web.Validate(path); err != nil {
-			return fmt.Errorf("--web.config.file %q inválido: %w", path, err)
+			return fmt.Errorf("--web.config.file %q invalid: %w", path, err)
 		}
 	}
 	return nil
 }
 
-// NormalizeDSN converte o DSN informado pelo usuário para o formato aceito pelo
-// driver go-sql-driver/mysql.
+// NormalizeDSN converts the DSN provided by the user to the format accepted
+// by the go-sql-driver/mysql driver.
 //
-// A especificação usa o prefixo `mariadb://` por clareza semântica, mas o driver
-// fala o protocolo MySQL e não entende esquemas de URL. Esta função remove o
-// prefixo (`mariadb://` ou `mysql://`) e devolve o DSN nativo, por exemplo:
+// The specification uses the `mariadb://` prefix for semantic clarity, but
+// the driver speaks the MySQL protocol and does not understand URL schemes.
+// This function removes the prefix (`mariadb://` or `mysql://`) and returns
+// the native DSN, for example:
 //
-//	mariadb://pmm:senha@tcp(localhost:3306)/  ->  pmm:senha@tcp(localhost:3306)/
+//	mariadb://pmm:password@tcp(localhost:3306)/  ->  pmm:password@tcp(localhost:3306)/
 //
-// DSNs já no formato nativo do driver são devolvidos inalterados.
+// DSNs already in the driver's native format are returned unchanged.
 func NormalizeDSN(dsn string) (string, error) {
 	dsn = strings.TrimSpace(dsn)
 	if dsn == "" {
-		return "", fmt.Errorf("DSN vazio")
+		return "", fmt.Errorf("empty DSN")
 	}
 
 	for _, scheme := range []string{"mariadb://", "mysql://"} {
@@ -285,8 +289,9 @@ func NormalizeDSN(dsn string) (string, error) {
 		}
 	}
 
-	// O driver exige a barra que separa endereço e nome do banco. Sem ela, um
-	// DSN como "user:senha@tcp(host:3306)" é rejeitado no Open.
+	// The driver requires the slash separating the address from the database
+	// name. Without it, a DSN like "user:password@tcp(host:3306)" is
+	// rejected in Open.
 	if !strings.Contains(dsn, "/") {
 		dsn += "/"
 	}
@@ -294,7 +299,7 @@ func NormalizeDSN(dsn string) (string, error) {
 	return dsn, nil
 }
 
-// RedactDSN remove a senha do DSN para que ele possa aparecer em logs.
+// RedactDSN removes the password from the DSN so it can appear in logs.
 func RedactDSN(dsn string) string {
 	at := strings.LastIndex(dsn, "@")
 	if at < 0 {
@@ -302,9 +307,9 @@ func RedactDSN(dsn string) string {
 	}
 	head, tail := dsn[:at], dsn[at:]
 
-	// O prefixo de esquema é preservado à parte: sem isso, o ':' de
-	// "mariadb://" seria confundido com o separador da senha em DSNs sem
-	// credenciais, corrompendo a URL.
+	// The scheme prefix is preserved separately: without this, the ':' in
+	// "mariadb://" would be confused with the password separator in DSNs
+	// without credentials, corrupting the URL.
 	prefix := ""
 	if idx := strings.Index(head, "://"); idx >= 0 {
 		prefix, head = head[:idx+3], head[idx+3:]
@@ -314,15 +319,15 @@ func RedactDSN(dsn string) string {
 	if colon < 0 {
 		return dsn
 	}
-	// Evita mascarar a porta de um DSN sem credenciais, ex: "tcp(host:3306)".
+	// Avoids masking the port of a DSN without credentials, e.g. "tcp(host:3306)".
 	if strings.ContainsAny(head[colon:], "()") {
 		return dsn
 	}
 	return prefix + head[:colon] + ":***" + tail
 }
 
-// dsnQueryParams extrai os parâmetros de query do DSN, se houver. Usado apenas
-// em testes e diagnósticos.
+// dsnQueryParams extracts the DSN's query parameters, if any. Used only in
+// tests and diagnostics.
 func dsnQueryParams(dsn string) (url.Values, error) {
 	idx := strings.Index(dsn, "?")
 	if idx < 0 {

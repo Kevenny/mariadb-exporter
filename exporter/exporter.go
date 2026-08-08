@@ -16,11 +16,11 @@ import (
 	"github.com/Kevenny/mariadb-exporter/config"
 )
 
-// collectorTimeout é o teto de tempo por coletor (seção 5, item 3).
+// collectorTimeout is the time cap per collector (section 5, item 3).
 const collectorTimeout = 30 * time.Second
 
-// Exporter implementa prometheus.Collector.
-// Gerencia o pool de conexões e orquestra os coletores.
+// Exporter implements prometheus.Collector.
+// Manages the connection pool and orchestrates the collectors.
 type Exporter struct {
 	db         *sql.DB
 	collectors []collector.Collector
@@ -36,9 +36,9 @@ type Exporter struct {
 	collectorAvail    *prometheus.Desc
 }
 
-// New cria o exporter com os coletores informados. Os metadados em pmm viram
-// ConstLabels nas métricas internas, permitindo que os filtros de cluster e
-// ambiente do PMM funcionem nos dashboards.
+// New creates the exporter with the given collectors. The metadata in pmm
+// becomes ConstLabels on the internal metrics, allowing PMM's cluster and
+// environment filters to work in dashboards.
 func New(db *sql.DB, collectors []collector.Collector, detector *FeatureDetector, pmm config.PMM, logger log.Logger) *Exporter {
 	constLabels := prometheus.Labels(pmm.ConstLabels())
 
@@ -51,43 +51,43 @@ func New(db *sql.DB, collectors []collector.Collector, detector *FeatureDetector
 		scrapeDuration: prometheus.NewHistogram(prometheus.HistogramOpts{
 			Namespace:   collector.Namespace,
 			Name:        "scrape_duration_seconds",
-			Help:        "Duração total do scrape do mariadb_exporter em segundos.",
+			Help:        "Total duration of the mariadb_exporter scrape in seconds.",
 			Buckets:     []float64{0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30},
 			ConstLabels: constLabels,
 		}),
 		scrapeSuccess: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace:   collector.Namespace,
 			Name:        "scrape_success",
-			Help:        "1 se o último scrape rodou sem erros em nenhum coletor, 0 caso contrário.",
+			Help:        "1 if the last scrape ran without errors in any collector, 0 otherwise.",
 			ConstLabels: constLabels,
 		}),
 		scrapeErrors: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Namespace:   collector.Namespace,
 			Name:        "scrape_errors_total",
-			Help:        "Total de erros de scrape por coletor.",
+			Help:        "Total scrape errors per collector.",
 			ConstLabels: constLabels,
 		}, []string{"collector"}),
 		up: prometheus.NewGauge(prometheus.GaugeOpts{
 			Namespace:   collector.Namespace,
 			Name:        "up",
-			Help:        "1 se o exporter está conectado ao MariaDB, 0 caso contrário.",
+			Help:        "1 if the exporter is connected to MariaDB, 0 otherwise.",
 			ConstLabels: constLabels,
 		}),
 
 		collectorDuration: prometheus.NewDesc(
 			prometheus.BuildFQName(collector.Namespace, "collector", "scrape_duration_seconds"),
-			"Duração do scrape de cada coletor em segundos.",
+			"Scrape duration of each collector in seconds.",
 			[]string{"collector"}, constLabels,
 		),
 		collectorAvail: prometheus.NewDesc(
 			prometheus.BuildFQName(collector.Namespace, "collector", "available"),
-			"1 se as dependências do coletor (plugin/variável) estão satisfeitas, 0 caso contrário.",
+			"1 if the collector's dependencies (plugin/variable) are satisfied, 0 otherwise.",
 			[]string{"collector"}, constLabels,
 		),
 	}
 
-	// Inicializa a série de erros de cada coletor para que a métrica exista com
-	// valor 0 antes do primeiro erro — evita gaps em queries de rate().
+	// Initializes the error series for each collector so the metric exists
+	// with value 0 before the first error — avoids gaps in rate() queries.
 	for _, c := range e.collectors {
 		e.scrapeErrors.WithLabelValues(c.Name())
 	}
@@ -95,7 +95,7 @@ func New(db *sql.DB, collectors []collector.Collector, detector *FeatureDetector
 	return e
 }
 
-// Describe implementa prometheus.Collector.
+// Describe implements prometheus.Collector.
 func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	e.scrapeDuration.Describe(ch)
 	e.scrapeSuccess.Describe(ch)
@@ -105,13 +105,13 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- e.collectorAvail
 }
 
-// Collect implementa prometheus.Collector, seguindo a ordem definida na seção 5:
-// verifica conectividade, atualiza mariadb_up, roda os coletores habilitados em
-// paralelo com timeout e contabiliza erros e durações.
+// Collect implements prometheus.Collector, following the order defined in
+// section 5: checks connectivity, updates mariadb_up, runs the enabled
+// collectors in parallel with a timeout, and tallies errors and durations.
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	start := time.Now()
 
-	// Sempre emite as métricas internas, mesmo com o banco offline (seção 17).
+	// Always emits the internal metrics, even with the database offline (section 17).
 	defer func() {
 		e.scrapeDuration.Observe(time.Since(start).Seconds())
 		e.scrapeDuration.Collect(ch)
@@ -124,14 +124,14 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	defer cancel()
 
 	if err := e.db.PingContext(ctx); err != nil {
-		_ = level.Error(e.logger).Log("msg", "banco inacessível, scrape abortado", "err", err)
+		_ = level.Error(e.logger).Log("msg", "database unreachable, scrape aborted", "err", err)
 		e.up.Set(0)
 		e.scrapeSuccess.Set(0)
 		return
 	}
 	e.up.Set(1)
 
-	// Publica a disponibilidade de cada coletor que declara dependências.
+	// Publishes the availability of each collector that declares dependencies.
 	for _, c := range e.collectors {
 		avail, ok := c.(collector.Availability)
 		if !ok {
@@ -172,9 +172,9 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 
 			if err != nil {
 				_ = level.Error(e.logger).Log(
-					"msg", "coletor falhou",
+					"msg", "collector failed",
 					"collector", c.Name(),
-					"duracao_s", elapsed,
+					"duration_s", elapsed,
 					"err", err,
 				)
 				e.scrapeErrors.WithLabelValues(c.Name()).Inc()
@@ -185,7 +185,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 				return
 			}
 
-			_ = level.Debug(e.logger).Log("msg", "coletor concluído", "collector", c.Name(), "duracao_s", elapsed)
+			_ = level.Debug(e.logger).Log("msg", "collector completed", "collector", c.Name(), "duration_s", elapsed)
 		}(c)
 	}
 
@@ -198,36 +198,37 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 	}
 }
 
-// collectSafely executa um coletor convertendo um eventual pânico em erro.
+// collectSafely runs a collector, converting any panic into an error.
 //
-// Cada coletor roda em sua própria goroutine, e um pânico ali não pode ser
-// recuperado pelo chamador: derrubaria o processo inteiro do exporter, parando a
-// coleta de todas as instâncias monitoradas por causa de um único coletor com
-// defeito (um label inesperado, uma coluna ausente, uma regressão futura).
-// Recuperar aqui isola a falha ao coletor afetado, que é então contabilizado em
-// mariadb_scrape_errors_total como qualquer outro erro.
+// Each collector runs in its own goroutine, and a panic there cannot be
+// recovered by the caller: it would take down the exporter's entire
+// process, stopping collection for all monitored instances because of a
+// single faulty collector (an unexpected label, a missing column, a future
+// regression). Recovering here isolates the failure to the affected
+// collector, which is then counted in mariadb_scrape_errors_total like any
+// other error.
 func collectSafely(c collector.Collector, ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = fmt.Errorf("pânico no coletor %s: %v\n%s", c.Name(), r, debug.Stack())
+			err = fmt.Errorf("panic in collector %s: %v\n%s", c.Name(), r, debug.Stack())
 		}
 	}()
 	return c.Collect(ctx, db, ch)
 }
 
-// Ping verifica a conectividade com o banco. Usado pelo endpoint /health.
+// Ping checks connectivity with the database. Used by the /health endpoint.
 func (e *Exporter) Ping(ctx context.Context) error {
 	return e.db.PingContext(ctx)
 }
 
-// BuildInfoCollector devolve a métrica mariadb_exporter_build_info (seção 16),
-// com os metadados do PMM aplicados como ConstLabels.
+// BuildInfoCollector returns the mariadb_exporter_build_info metric
+// (section 16), with the PMM metadata applied as ConstLabels.
 func BuildInfoCollector(version, buildDate, goVersion string, pmm config.PMM) prometheus.Collector {
 	g := prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace:   collector.Namespace,
 		Subsystem:   "exporter",
 		Name:        "build_info",
-		Help:        "Informações de build do mariadb_exporter.",
+		Help:        "Build information for mariadb_exporter.",
 		ConstLabels: prometheus.Labels(pmm.ConstLabels()),
 	}, []string{"version", "build_date", "go_version"})
 	g.WithLabelValues(version, buildDate, goVersion).Set(1)

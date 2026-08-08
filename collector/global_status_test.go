@@ -30,7 +30,7 @@ func TestGlobalStatusCollector(t *testing.T) {
 		AddRow("Select_scan", "1500").
 		AddRow("Sort_merge_passes", "2").
 		AddRow("Uptime", "864000").
-		// Variáveis fora da lista explícita devem ser ignoradas.
+		// Variables outside the explicit list should be ignored.
 		AddRow("Threads_connected", "9").
 		AddRow("Ssl_cipher", "TLS_AES_256_GCM_SHA384")
 
@@ -61,12 +61,12 @@ func TestGlobalStatusCollector(t *testing.T) {
 	require.Equal(t, float64(2), requireMetric(t, snaps, "mariadb_sort_merge_passes_total", nil).Value)
 	require.Equal(t, float64(864000), requireMetric(t, snaps, "mariadb_uptime_seconds", nil).Value)
 
-	// Exatamente as 18 variáveis da lista explícita, nada de wildcard.
+	// Exactly the 18 variables from the explicit list, no wildcards.
 	require.Len(t, snaps, 18)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Valores não numéricos são ignorados sem derrubar o scrape.
+// Non-numeric values are ignored without breaking the scrape.
 func TestGlobalStatusCollectorIgnoresNonNumeric(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -113,10 +113,10 @@ func TestGlobalVariablesCollector(t *testing.T) {
 	require.Equal(t, float64(600), requireMetric(t, snaps, "mariadb_wait_timeout_seconds", nil).Value)
 	require.Equal(t, float64(28800), requireMetric(t, snaps, "mariadb_interactive_timeout_seconds", nil).Value)
 
-	// userstat=ON deve virar 1.
+	// userstat=ON should become 1.
 	require.Equal(t, float64(1), requireMetric(t, snaps, "mariadb_userstat_enabled", nil).Value)
 
-	require.Len(t, snaps, 7, "version não deve gerar métrica")
+	require.Len(t, snaps, 7, "version should not generate a metric")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
@@ -143,7 +143,7 @@ func TestInfoCollector(t *testing.T) {
 	mock.ExpectQuery("SELECT VERSION\\(\\)").WillReturnRows(rows)
 
 	c := NewInfoCollector(testLogger(), allFeatures(), nil)
-	require.True(t, c.Enabled(), "o coletor info não pode ser desabilitado")
+	require.True(t, c.Enabled(), "the info collector cannot be disabled")
 
 	metrics, err := runCollect(t, c, db)
 	require.NoError(t, err)
@@ -157,13 +157,13 @@ func TestInfoCollector(t *testing.T) {
 		"server_id":       "1",
 	})
 
-	require.Equal(t, float64(1), info.Value, "info metric deve valer sempre 1")
+	require.Equal(t, float64(1), info.Value, "info metric should always be 1")
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Com ConstLabels de integração PMM informadas, elas devem aparecer em toda
-// linha de mariadb_info além dos quatro labels dinâmicos normais (seção 3 de
-// mariadb_exporter_pmm_integration.md).
+// When PMM integration ConstLabels are provided, they should appear on every
+// mariadb_info row in addition to the four normal dynamic labels (section 3
+// of mariadb_exporter_pmm_integration.md).
 func TestInfoCollectorWithPMMConstLabels(t *testing.T) {
 	db, mock := newMockDB(t)
 

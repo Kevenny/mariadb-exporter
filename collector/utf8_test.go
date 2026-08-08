@@ -7,12 +7,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Labels vindos do banco podem conter bytes que não formam UTF-8 válido: nomes
-// de usuário, tabela ou índice em latin1, ou um blob binário. O client_golang
-// entra em pânico ao construir uma métrica com label inválido, o que derrubaria
-// o processo inteiro do exporter durante um scrape.
+// Labels coming from the database may contain bytes that don't form valid
+// UTF-8: usernames, table or index names in latin1, or a binary blob.
+// client_golang panics when building a metric with an invalid label, which
+// would bring down the entire exporter process during a scrape.
 //
-// Estes testes cobrem os coletores nativos cujos labels vêm direto do servidor.
+// These tests cover the native collectors whose labels come straight from the
+// server.
 
 func TestUserStatInvalidUTF8InUserLabel(t *testing.T) {
 	db, mock := newMockDB(t)
@@ -31,7 +32,7 @@ func TestUserStatInvalidUTF8InUserLabel(t *testing.T) {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
 		requireAllLabelsValidUTF8(t, snapshot(t, metrics))
-	}, "UTF-8 inválido no label user derrubou o coletor")
+	}, "invalid UTF-8 in the user label brought down the collector")
 }
 
 func TestTableStatInvalidUTF8InLabels(t *testing.T) {
@@ -49,7 +50,7 @@ func TestTableStatInvalidUTF8InLabels(t *testing.T) {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
 		requireAllLabelsValidUTF8(t, snapshot(t, metrics))
-	}, "UTF-8 inválido em schema/table derrubou o coletor")
+	}, "invalid UTF-8 in schema/table brought down the collector")
 }
 
 func TestIndexStatInvalidUTF8InLabels(t *testing.T) {
@@ -67,7 +68,7 @@ func TestIndexStatInvalidUTF8InLabels(t *testing.T) {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
 		requireAllLabelsValidUTF8(t, snapshot(t, metrics))
-	}, "UTF-8 inválido no nome do índice derrubou o coletor")
+	}, "invalid UTF-8 in the index name brought down the collector")
 }
 
 func TestClientStatInvalidUTF8InLabel(t *testing.T) {
@@ -84,7 +85,7 @@ func TestClientStatInvalidUTF8InLabel(t *testing.T) {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
 		requireAllLabelsValidUTF8(t, snapshot(t, metrics))
-	}, "UTF-8 inválido no label client derrubou o coletor")
+	}, "invalid UTF-8 in the client label brought down the collector")
 }
 
 func TestInfoCollectorInvalidUTF8InLabel(t *testing.T) {
@@ -101,7 +102,7 @@ func TestInfoCollectorInvalidUTF8InLabel(t *testing.T) {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
 		requireAllLabelsValidUTF8(t, snapshot(t, metrics))
-	}, "UTF-8 inválido no version_comment derrubou o coletor")
+	}, "invalid UTF-8 in version_comment brought down the collector")
 }
 
 func TestMetadataLocksInvalidUTF8InLabels(t *testing.T) {
@@ -118,7 +119,7 @@ func TestMetadataLocksInvalidUTF8InLabels(t *testing.T) {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
 		requireAllLabelsValidUTF8(t, snapshot(t, metrics))
-	}, "UTF-8 inválido no nome da tabela derrubou o coletor")
+	}, "invalid UTF-8 in the table name brought down the collector")
 }
 
 func TestDisksInvalidUTF8InLabels(t *testing.T) {
@@ -135,7 +136,7 @@ func TestDisksInvalidUTF8InLabels(t *testing.T) {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
 		requireAllLabelsValidUTF8(t, snapshot(t, metrics))
-	}, "UTF-8 inválido no nome do disco derrubou o coletor")
+	}, "invalid UTF-8 in the disk name brought down the collector")
 }
 
 func TestReplicationInvalidUTF8InLabels(t *testing.T) {
@@ -152,7 +153,7 @@ func TestReplicationInvalidUTF8InLabels(t *testing.T) {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
 		requireAllLabelsValidUTF8(t, snapshot(t, metrics))
-	}, "UTF-8 inválido no connection_name derrubou o coletor")
+	}, "invalid UTF-8 in connection_name brought down the collector")
 }
 
 func TestGaleraInvalidUTF8InClusterName(t *testing.T) {
@@ -170,18 +171,18 @@ func TestGaleraInvalidUTF8InClusterName(t *testing.T) {
 		metrics, err := runCollect(t, c, db)
 		require.NoError(t, err)
 		requireAllLabelsValidUTF8(t, snapshot(t, metrics))
-	}, "UTF-8 inválido no wsrep_cluster_name derrubou o coletor")
+	}, "invalid UTF-8 in wsrep_cluster_name brought down the collector")
 }
 
-// requireAllLabelsValidUTF8 confere que nenhum label emitido tem UTF-8
-// inválido — bytes inválidos corrompem a saída de /metrics para todos os
-// scrapes, não só para a série afetada.
+// requireAllLabelsValidUTF8 checks that no emitted label has invalid UTF-8 —
+// invalid bytes corrupt the /metrics output for every scrape, not just for
+// the affected series.
 func requireAllLabelsValidUTF8(t *testing.T, snaps []metricSnapshot) {
 	t.Helper()
 	for _, s := range snaps {
 		for k, v := range s.Labels {
 			require.True(t, isValidUTF8(v),
-				"métrica %s: label %q com UTF-8 inválido (%q)", s.Name, k, v)
+				"metric %s: label %q has invalid UTF-8 (%q)", s.Name, k, v)
 		}
 	}
 }

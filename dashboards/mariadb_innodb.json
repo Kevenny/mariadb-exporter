@@ -49,7 +49,7 @@
     {
       "id": 1,
       "title": "Buffer pool hit ratio",
-      "description": "Fração das leituras atendidas em memória. Abaixo de ~99% em regime estável sugere buffer pool pequeno para o working set.",
+      "description": "Fraction of reads served from memory. Below ~99% in steady state suggests a buffer pool that's too small for the working set.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -78,20 +78,20 @@
     },
     {
       "id": 2,
-      "title": "Buffer pool — leituras lógicas vs. disco",
-      "description": "read_requests é leitura lógica (memória); reads é o que precisou ir ao disco.",
+      "title": "Buffer pool — logical reads vs. disk",
+      "description": "read_requests are logical reads (memory); reads are the ones that had to go to disk.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
           "expr": "rate(mariadb_innodb_buffer_pool_read_requests_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
-          "legendFormat": "{{service_name}} lógicas/s",
+          "legendFormat": "{{service_name}} logical/s",
           "refId": "A"
         },
         {
           "expr": "rate(mariadb_innodb_buffer_pool_reads_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
-          "legendFormat": "{{service_name}} disco/s",
+          "legendFormat": "{{service_name}} disk/s",
           "refId": "B"
         }
       ],
@@ -99,8 +99,8 @@
     },
     {
       "id": 3,
-      "title": "Páginas do buffer pool por tipo",
-      "description": "free baixo e sustentado indica pressão de memória. dirty alto indica muita escrita pendente de flush.",
+      "title": "Buffer pool pages by type",
+      "description": "Low and sustained 'free' indicates memory pressure. High 'dirty' indicates a lot of writes pending flush.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -115,8 +115,8 @@
     },
     {
       "id": 4,
-      "title": "Ocupação do buffer pool (%)",
-      "description": "Percentual de páginas em uso (data + dirty + misc) sobre o total.",
+      "title": "Buffer pool occupancy (%)",
+      "description": "Percentage of pages in use (data + dirty + misc) over the total.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 9 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -131,7 +131,7 @@
     },
     {
       "type": "row",
-      "title": "Locks e Deadlocks",
+      "title": "Locks and Deadlocks",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
       "collapsed": false,
       "panels": []
@@ -139,7 +139,7 @@
     {
       "id": 5,
       "title": "Row lock waits",
-      "description": "Operações que tiveram de esperar por lock de linha. Crescimento sustentado indica contenção.",
+      "description": "Operations that had to wait for a row lock. Sustained growth indicates contention.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 18 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -154,7 +154,7 @@
     },
     {
       "id": 6,
-      "title": "Tempo médio de espera por row lock",
+      "title": "Average row lock wait time",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 18 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -169,8 +169,8 @@
     },
     {
       "id": 7,
-      "title": "Deadlocks acumulados",
-      "description": "Contador de deadlocks detectados pelo InnoDB. Qualquer valor crescente merece investigação da ordem de acesso das transações.",
+      "title": "Cumulative deadlocks",
+      "description": "Counter of deadlocks detected by InnoDB. Any increasing value deserves investigation of transaction access ordering.",
       "type": "stat",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 18 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -196,27 +196,27 @@
     },
     {
       "type": "row",
-      "title": "Tabelas temporárias e ordenação",
+      "title": "Temporary Tables and Sorting",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 26 },
       "collapsed": false,
       "panels": []
     },
     {
       "id": 8,
-      "title": "Tabelas temporárias: memória vs. disco",
-      "description": "Temporárias em disco são muito mais lentas. Alta proporção sugere revisar tmp_table_size/max_heap_table_size ou as próprias queries.",
+      "title": "Temporary tables: memory vs. disk",
+      "description": "On-disk temporary tables are much slower. A high proportion suggests reviewing tmp_table_size/max_heap_table_size or the queries themselves.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 27 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
           "expr": "rate(mariadb_created_tmp_tables_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
-          "legendFormat": "{{service_name}} memória/s",
+          "legendFormat": "{{service_name}} memory/s",
           "refId": "A"
         },
         {
           "expr": "rate(mariadb_created_tmp_disk_tables_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
-          "legendFormat": "{{service_name}} disco/s",
+          "legendFormat": "{{service_name}} disk/s",
           "refId": "B"
         }
       ],
@@ -224,7 +224,7 @@
     },
     {
       "id": 9,
-      "title": "% de temporárias que foram para disco",
+      "title": "% of temporary tables that went to disk",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 27 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -253,8 +253,8 @@
     },
     {
       "id": 10,
-      "title": "Queries problemáticas: full join, full scan, sort merge",
-      "description": "select_full_join sem índice é o pior caso. sort_merge_passes indica ordenação que não caberia em sort_buffer_size.",
+      "title": "Problematic queries: full join, full scan, sort merge",
+      "description": "select_full_join without an index is the worst case. sort_merge_passes indicates sorting that wouldn't fit in sort_buffer_size.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 35 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -279,8 +279,8 @@
     },
     {
       "id": 11,
-      "title": "Cache de tabelas abertas — hit ratio",
-      "description": "Misses altos indicam table_open_cache pequeno para a quantidade de tabelas em uso.",
+      "title": "Open tables cache — hit ratio",
+      "description": "High misses indicate a table_open_cache that's too small for the number of tables in use.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 35 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -295,14 +295,14 @@
     },
     {
       "type": "row",
-      "title": "Configuração e recursos",
+      "title": "Configuration and Resources",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 43 },
       "collapsed": false,
       "panels": []
     },
     {
       "id": 12,
-      "title": "Tamanho do buffer pool",
+      "title": "Buffer pool size",
       "type": "stat",
       "gridPos": { "h": 6, "w": 6, "x": 0, "y": 44 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -317,7 +317,7 @@
     },
     {
       "id": 13,
-      "title": "Arquivos abertos",
+      "title": "Open files",
       "type": "timeseries",
       "gridPos": { "h": 6, "w": 6, "x": 6, "y": 44 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -331,7 +331,7 @@
     },
     {
       "id": 14,
-      "title": "Tabelas abertas",
+      "title": "Open tables",
       "type": "timeseries",
       "gridPos": { "h": 6, "w": 6, "x": 12, "y": 44 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -345,19 +345,19 @@
     },
     {
       "id": 15,
-      "title": "Tráfego de rede",
+      "title": "Network traffic",
       "type": "timeseries",
       "gridPos": { "h": 6, "w": 6, "x": 18, "y": 44 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
           "expr": "rate(mariadb_bytes_received_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
-          "legendFormat": "{{service_name}} recebido",
+          "legendFormat": "{{service_name}} received",
           "refId": "A"
         },
         {
           "expr": "rate(mariadb_bytes_sent_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
-          "legendFormat": "{{service_name}} enviado",
+          "legendFormat": "{{service_name}} sent",
           "refId": "B"
         }
       ],

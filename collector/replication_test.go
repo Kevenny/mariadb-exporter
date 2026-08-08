@@ -8,16 +8,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// allSlavesColumns é um subconjunto representativo das colunas de
-// SHOW ALL SLAVES STATUS no MariaDB.
+// allSlavesColumns is a representative subset of the columns from
+// SHOW ALL SLAVES STATUS in MariaDB.
 var allSlavesColumns = []string{
 	"Connection_name", "Slave_SQL_State", "Slave_IO_State", "Master_Host", "Master_User",
 	"Master_Port", "Slave_IO_Running", "Slave_SQL_Running", "Relay_Log_Pos",
 	"Last_Errno", "Last_Error", "Seconds_Behind_Master",
 }
 
-// Multi-source: duas conexões de replicação devem gerar séries distintas
-// separadas pelo label connection_name.
+// Multi-source: two replication connections should generate distinct series
+// separated by the connection_name label.
 func TestReplicationCollectorMultiSource(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -51,7 +51,7 @@ func TestReplicationCollectorMultiSource(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Instância que não é réplica: zero linhas, zero métricas, sem erro.
+// Instance that is not a replica: zero rows, zero metrics, no error.
 func TestReplicationCollectorNoSlaves(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -65,7 +65,7 @@ func TestReplicationCollectorNoSlaves(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Servidor sem SHOW ALL SLAVES STATUS deve cair no SHOW SLAVE STATUS.
+// Server without SHOW ALL SLAVES STATUS should fall back to SHOW SLAVE STATUS.
 func TestReplicationCollectorFallbackToShowSlaveStatus(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -85,7 +85,7 @@ func TestReplicationCollectorFallbackToShowSlaveStatus(t *testing.T) {
 
 	snaps := snapshot(t, metrics)
 
-	// Sem Connection_name, o label fica vazio (conexão default).
+	// Without Connection_name, the label is left empty (default connection).
 	labels := map[string]string{"connection_name": "", "master_host": "10.0.0.10", "master_port": "3306"}
 	require.Equal(t, float64(1), requireMetric(t, snaps, "mariadb_slave_sql_running", labels).Value)
 	require.Equal(t, float64(2), requireMetric(t, snaps, "mariadb_slave_seconds_behind_master", labels).Value)
@@ -93,8 +93,8 @@ func TestReplicationCollectorFallbackToShowSlaveStatus(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Seconds_Behind_Master NULL (replicação parada) deve omitir a métrica em vez de
-// reportar 0, que seria interpretado como "réplica em dia".
+// Seconds_Behind_Master NULL (replication stopped) should omit the metric
+// instead of reporting 0, which would be interpreted as "replica up to date".
 func TestReplicationCollectorNullSecondsBehind(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -115,7 +115,7 @@ func TestReplicationCollectorNullSecondsBehind(t *testing.T) {
 	require.Equal(t, float64(1593), requireMetric(t, snaps, "mariadb_slave_last_errno", labels).Value)
 }
 
-// Slave_IO_Running = "Connecting" conta como não rodando.
+// Slave_IO_Running = "Connecting" counts as not running.
 func TestReplicationCollectorConnectingIsNotRunning(t *testing.T) {
 	db, mock := newMockDB(t)
 

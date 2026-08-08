@@ -18,8 +18,8 @@ import (
 	"github.com/Kevenny/mariadb-exporter/config"
 )
 
-// fakeCollector é um coletor controlável, usado para exercitar a orquestração
-// sem depender de queries reais.
+// fakeCollector is a controllable collector, used to exercise the
+// orchestration without depending on real queries.
 type fakeCollector struct {
 	name      string
 	enabled   bool
@@ -35,13 +35,13 @@ func newFakeCollector(name string, enabled bool, err error) *fakeCollector {
 		enabled:   enabled,
 		available: true,
 		err:       err,
-		desc:      prometheus.NewDesc("fake_"+name, "métrica de teste", nil, nil),
+		desc:      prometheus.NewDesc("fake_"+name, "test metric", nil, nil),
 		value:     1,
 	}
 }
 
 func (f *fakeCollector) Name() string    { return f.name }
-func (f *fakeCollector) Help() string    { return "coletor de teste" }
+func (f *fakeCollector) Help() string    { return "test collector" }
 func (f *fakeCollector) Enabled() bool   { return f.enabled }
 func (f *fakeCollector) Available() bool { return f.available }
 
@@ -69,11 +69,12 @@ func newTestExporterWithPMM(t *testing.T, collectors []collector.Collector, pmm 
 	return New(db, collectors, detector, pmm, log.NewNopLogger()), mock
 }
 
-// gather coleta as métricas do exporter através de um registry real.
+// gather collects the exporter's metrics through a real registry.
 //
-// Usa NewRegistry (e não NewPedanticRegistry) porque os fakeCollector emitem
-// Descs próprios que o Describe do Exporter não declara — o registry pedante
-// rejeitaria essas métricas, que aqui são justamente o que se quer observar.
+// Uses NewRegistry (and not NewPedanticRegistry) because the fakeCollectors
+// emit their own Descs that the Exporter's Describe does not declare — the
+// pedantic registry would reject these metrics, which here are exactly what
+// we want to observe.
 func gather(t *testing.T, e *Exporter) []*dto.MetricFamily {
 	t.Helper()
 
@@ -85,8 +86,8 @@ func gather(t *testing.T, e *Exporter) []*dto.MetricFamily {
 	return families
 }
 
-// familyExists informa se a família de métricas foi exposta, independente do
-// tipo. Necessário para histogramas, que não têm gauge/counter value.
+// familyExists reports whether the metric family was exposed, regardless of
+// type. Needed for histograms, which have no gauge/counter value.
 func familyExists(families []*dto.MetricFamily, name string) bool {
 	for _, f := range families {
 		if f.GetName() == name {
@@ -113,7 +114,7 @@ func familyValue(families []*dto.MetricFamily, name string) (float64, bool) {
 	return 0, false
 }
 
-// labeledValue busca o valor de uma métrica filtrando por um label.
+// labeledValue looks up a metric's value, filtering by a label.
 func labeledValue(families []*dto.MetricFamily, name, label, value string) (float64, bool) {
 	for _, f := range families {
 		if f.GetName() != name {
@@ -139,7 +140,7 @@ func labeledValue(families []*dto.MetricFamily, name, label, value string) (floa
 func TestExporterCollectSuccess(t *testing.T) {
 	ok1 := newFakeCollector("ok1", true, nil)
 	ok2 := newFakeCollector("ok2", true, nil)
-	disabled := newFakeCollector("desligado", false, nil)
+	disabled := newFakeCollector("disabled", false, nil)
 
 	e, mock := newTestExporter(t, []collector.Collector{ok1, ok2, disabled})
 	mock.ExpectPing()
@@ -154,32 +155,32 @@ func TestExporterCollectSuccess(t *testing.T) {
 	require.True(t, ok)
 	require.Equal(t, float64(1), success)
 
-	// Métricas dos coletores habilitados chegam ao registry.
+	// Metrics from enabled collectors reach the registry.
 	_, ok = familyValue(families, "fake_ok1")
 	require.True(t, ok)
 	_, ok = familyValue(families, "fake_ok2")
 	require.True(t, ok)
 
-	// Coletor desabilitado não roda.
-	_, ok = familyValue(families, "fake_desligado")
+	// Disabled collector does not run.
+	_, ok = familyValue(families, "fake_disabled")
 	require.False(t, ok)
 
-	// Duração por coletor é publicada para os habilitados.
+	// Per-collector duration is published for the enabled ones.
 	_, ok = labeledValue(families, "mariadb_collector_scrape_duration_seconds", "collector", "ok1")
 	require.True(t, ok)
 }
 
-// Erro em um coletor incrementa o contador daquele coletor e não impede os outros.
+// An error in one collector increments that collector's counter and does not block the others.
 func TestExporterCollectPartialFailure(t *testing.T) {
 	bom := newFakeCollector("bom", true, nil)
-	ruim := newFakeCollector("ruim", true, errors.New("permissão negada"))
+	ruim := newFakeCollector("ruim", true, errors.New("permission denied"))
 
 	e, mock := newTestExporter(t, []collector.Collector{bom, ruim})
 	mock.ExpectPing()
 
 	families := gather(t, e)
 
-	// O coletor saudável continua entregando métricas.
+	// The healthy collector keeps delivering metrics.
 	_, ok := familyValue(families, "fake_bom")
 	require.True(t, ok)
 
@@ -188,18 +189,18 @@ func TestExporterCollectPartialFailure(t *testing.T) {
 	require.Equal(t, float64(1), errCount)
 
 	okCount, ok := labeledValue(families, "mariadb_scrape_errors_total", "collector", "bom")
-	require.True(t, ok, "a série deve existir com 0 antes do primeiro erro")
+	require.True(t, ok, "the series should exist with 0 before the first error")
 	require.Equal(t, float64(0), okCount)
 
 	success, _ := familyValue(families, "mariadb_scrape_success")
-	require.Equal(t, float64(0), success, "qualquer erro zera o scrape_success")
+	require.Equal(t, float64(0), success, "any error zeroes out scrape_success")
 
 	up, _ := familyValue(families, "mariadb_up")
-	require.Equal(t, float64(1), up, "erro de coletor não afeta mariadb_up")
+	require.Equal(t, float64(1), up, "collector error does not affect mariadb_up")
 }
 
-// Banco offline: mariadb_up=0, métricas internas presentes e retorno rápido
-// sem executar coletores (seção 17).
+// Database offline: mariadb_up=0, internal metrics present, and a fast
+// return without running collectors (section 17).
 func TestExporterCollectDatabaseDown(t *testing.T) {
 	c := newFakeCollector("qualquer", true, nil)
 
@@ -215,15 +216,15 @@ func TestExporterCollectDatabaseDown(t *testing.T) {
 	success, _ := familyValue(families, "mariadb_scrape_success")
 	require.Equal(t, float64(0), success)
 
-	// Nenhum coletor deve ter rodado.
+	// No collector should have run.
 	_, ok = familyValue(families, "fake_qualquer")
 	require.False(t, ok)
 
-	// As métricas internas continuam expostas (duração é histograma).
+	// The internal metrics remain exposed (duration is a histogram).
 	require.True(t, familyExists(families, "mariadb_scrape_duration_seconds"))
 }
 
-// mariadb_collector_available reflete o Available() de cada coletor.
+// mariadb_collector_available reflects each collector's Available().
 func TestExporterCollectorAvailability(t *testing.T) {
 	disponivel := newFakeCollector("disponivel", true, nil)
 	indisponivel := newFakeCollector("indisponivel", true, nil)
@@ -257,29 +258,29 @@ func TestBuildInfoCollector(t *testing.T) {
 	c := BuildInfoCollector("1.2.3", "2026-08-07T00:00:00Z", "go1.22.0", config.PMM{})
 
 	expected := `
-# HELP mariadb_exporter_build_info Informações de build do mariadb_exporter.
+# HELP mariadb_exporter_build_info Build information for mariadb_exporter.
 # TYPE mariadb_exporter_build_info gauge
 mariadb_exporter_build_info{build_date="2026-08-07T00:00:00Z",go_version="go1.22.0",version="1.2.3"} 1
 `
 	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(expected)))
 }
 
-// Com metadados de PMM informados, eles devem aparecer como ConstLabels em
-// mariadb_exporter_build_info (mariadb_exporter_pmm_integration.md, seção 3).
+// With PMM metadata provided, it should appear as ConstLabels in
+// mariadb_exporter_build_info (mariadb_exporter_pmm_integration.md, section 3).
 func TestBuildInfoCollectorWithPMMConstLabels(t *testing.T) {
 	pmm := config.PMM{ServiceName: "mariadb-host01", Cluster: "prod-cluster", Environment: "production"}
 	c := BuildInfoCollector("1.2.3", "2026-08-07T00:00:00Z", "go1.22.0", pmm)
 
 	expected := `
-# HELP mariadb_exporter_build_info Informações de build do mariadb_exporter.
+# HELP mariadb_exporter_build_info Build information for mariadb_exporter.
 # TYPE mariadb_exporter_build_info gauge
 mariadb_exporter_build_info{build_date="2026-08-07T00:00:00Z",cluster="prod-cluster",environment="production",go_version="go1.22.0",service_name="mariadb-host01",version="1.2.3"} 1
 `
 	require.NoError(t, testutil.CollectAndCompare(c, strings.NewReader(expected)))
 }
 
-// As métricas internas do exporter (mariadb_up, scrape_success, etc.) também
-// devem carregar as ConstLabels de PMM quando configuradas.
+// The exporter's internal metrics (mariadb_up, scrape_success, etc.) should
+// also carry the PMM ConstLabels when configured.
 func TestExporterConstLabelsFromPMM(t *testing.T) {
 	pmm := config.PMM{ServiceName: "mariadb-host01", Cluster: "prod-cluster", Environment: "production"}
 	e, mock := newTestExporterWithPMM(t, nil, pmm)
@@ -288,18 +289,19 @@ func TestExporterConstLabelsFromPMM(t *testing.T) {
 	families := gather(t, e)
 
 	up, ok := labeledValue(families, "mariadb_up", "cluster", "prod-cluster")
-	require.True(t, ok, "mariadb_up deveria carregar o label cluster")
+	require.True(t, ok, "mariadb_up should carry the cluster label")
 	require.Equal(t, float64(1), up)
 
 	_, ok = labeledValue(families, "mariadb_up", "service_name", "mariadb-host01")
-	require.True(t, ok, "mariadb_up deveria carregar o label service_name")
+	require.True(t, ok, "mariadb_up should carry the service_name label")
 
 	_, ok = labeledValue(families, "mariadb_up", "environment", "production")
-	require.True(t, ok, "mariadb_up deveria carregar o label environment")
+	require.True(t, ok, "mariadb_up should carry the environment label")
 }
 
-// Sem configuração de PMM, os labels de cluster/service_name/environment não
-// devem aparecer — instalações sem PMM não devem ganhar labels vazios à toa.
+// Without PMM configuration, the cluster/service_name/environment labels
+// should not appear — installations without PMM should not gain empty
+// labels for no reason.
 func TestExporterNoConstLabelsWithoutPMM(t *testing.T) {
 	e, mock := newTestExporter(t, nil)
 	mock.ExpectPing()
@@ -312,8 +314,8 @@ func TestExporterNoConstLabelsWithoutPMM(t *testing.T) {
 		}
 		for _, m := range f.GetMetric() {
 			for _, lp := range m.GetLabel() {
-				require.NotEqual(t, "cluster", lp.GetName(), "não deveria haver label cluster sem --pmm.cluster")
-				require.NotEqual(t, "service_name", lp.GetName(), "não deveria haver label service_name sem --pmm.service-name")
+				require.NotEqual(t, "cluster", lp.GetName(), "there should be no cluster label without --pmm.cluster")
+				require.NotEqual(t, "service_name", lp.GetName(), "there should be no service_name label without --pmm.service-name")
 			}
 		}
 	}

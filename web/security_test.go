@@ -14,13 +14,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// O /health é um endpoint sem autenticação: qualquer um que alcance a porta do
-// exporter pode chamá-lo. Ele devolve a mensagem de erro do driver, que em
-// alguns modos de falha inclui o DSN completo — e portanto a senha.
+// /health is an endpoint without authentication: anyone who can reach the
+// exporter's port can call it. It returns the driver's error message, which
+// in some failure modes includes the full DSN — and therefore the password.
 func TestHealthDoesNotLeakCredentialsInErrorMessage(t *testing.T) {
 	const senha = "S3nh4-Sup3r-S3cr3t4"
 
-	// Erro no formato que o go-sql-driver/mysql pode produzir, com o DSN dentro.
+	// Error in the format go-sql-driver/mysql can produce, with the DSN inside.
 	driverErr := errors.New(
 		`dial tcp 10.0.0.5:3306: connect: connection refused ` +
 			`(dsn: mariadb_exporter:` + senha + `@tcp(10.0.0.5:3306)/)`,
@@ -40,11 +40,11 @@ func TestHealthDoesNotLeakCredentialsInErrorMessage(t *testing.T) {
 
 	body := rec.Body.String()
 	require.NotContains(t, body, senha,
-		"a senha vazou no corpo do /health, que é público: %s", body)
+		"the password leaked in the /health body, which is public: %s", body)
 }
 
-// Mesmo sem credencial, expor o erro cru do driver revela topologia interna
-// (IPs, portas, nomes de host) para quem quer que alcance o endpoint.
+// Even without a credential, exposing the driver's raw error reveals
+// internal topology (IPs, ports, hostnames) to whoever can reach the endpoint.
 func TestHealthErrorMessageIsNotRawDriverError(t *testing.T) {
 	driverErr := errors.New("dial tcp 10.0.0.5:3306: connect: connection refused")
 
@@ -62,12 +62,12 @@ func TestHealthErrorMessageIsNotRawDriverError(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &payload))
 	require.Equal(t, "error", payload["status"])
 
-	// O detalhe do erro pertence ao log do operador, não à resposta HTTP.
+	// The error detail belongs in the operator's log, not the HTTP response.
 	require.NotContains(t, payload["message"], "10.0.0.5",
-		"o /health expôs o endereço interno do banco: %q", payload["message"])
+		"/health exposed the database's internal address: %q", payload["message"])
 }
 
-// O /health não deve aceitar métodos que sugiram mutação de estado.
+// /health should not accept methods that suggest a state mutation.
 func TestHealthOnlyAllowsSafeMethods(t *testing.T) {
 	h := NewHandler(Options{
 		TelemetryPath: "/metrics",
@@ -83,7 +83,7 @@ func TestHealthOnlyAllowsSafeMethods(t *testing.T) {
 	}
 }
 
-// A página de índice não deve conter o DSN nem qualquer credencial.
+// The index page should not contain the DSN or any credential.
 func TestIndexPageDoesNotLeakConfiguration(t *testing.T) {
 	h := NewHandler(Options{
 		TelemetryPath: "/metrics",
@@ -97,12 +97,12 @@ func TestIndexPageDoesNotLeakConfiguration(t *testing.T) {
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 
 	body := rec.Body.String()
-	require.NotContains(t, body, "@tcp(", "a página de índice expôs um DSN")
+	require.NotContains(t, body, "@tcp(", "the index page exposed a DSN")
 	require.NotContains(t, body, "senha")
 	require.NotContains(t, body, "password")
 }
 
-// Um path com traversal não deve escapar do mux nem servir arquivos do disco.
+// A path with traversal should not escape the mux or serve files from disk.
 func TestNoPathTraversal(t *testing.T) {
 	h := NewHandler(Options{
 		TelemetryPath: "/metrics",
@@ -121,13 +121,13 @@ func TestNoPathTraversal(t *testing.T) {
 		h.ServeHTTP(rec, req)
 
 		body := rec.Body.String()
-		require.NotContains(t, body, "root:", "path %q parece ter servido /etc/passwd", path)
+		require.NotContains(t, body, "root:", "path %q appears to have served /etc/passwd", path)
 		require.NotContains(t, strings.ToLower(body), "/bin/bash")
 	}
 }
 
-// O health check tem um timeout próprio; um Ping que trava não deve segurar a
-// conexão HTTP indefinidamente.
+// The health check has its own timeout; a Ping that hangs should not hold
+// the HTTP connection indefinitely.
 func TestHealthRespectsContextTimeout(t *testing.T) {
 	blocking := blockingPinger{released: make(chan struct{})}
 	defer close(blocking.released)
@@ -139,7 +139,7 @@ func TestHealthRespectsContextTimeout(t *testing.T) {
 		Logger:        log.NewNopLogger(),
 	})
 
-	// Cliente desiste antes do exporter: o handler deve terminar sem vazar.
+	// Client gives up before the exporter: the handler must terminate without leaking.
 	ctx, cancel := context.WithCancel(context.Background())
 	req := httptest.NewRequest(http.MethodGet, "/health", nil).WithContext(ctx)
 	cancel()
@@ -148,8 +148,7 @@ func TestHealthRespectsContextTimeout(t *testing.T) {
 	require.NotPanics(t, func() { h.ServeHTTP(rec, req) })
 }
 
-// blockingPinger respeita o cancelamento do contexto, como um driver bem
-// comportado faria.
+// blockingPinger respects context cancellation, as a well-behaved driver would.
 type blockingPinger struct {
 	released chan struct{}
 }

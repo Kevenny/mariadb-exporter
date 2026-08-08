@@ -14,26 +14,26 @@ import (
 	"github.com/Kevenny/mariadb-exporter/config"
 )
 
-// panickingCollector simula um coletor com um bug que entra em pânico —
-// exatamente o que aconteceria com um label UTF-8 inválido antes da correção,
-// ou com qualquer regressão futura num coletor.
+// panickingCollector simulates a collector with a bug that panics — exactly
+// what would happen with an invalid UTF-8 label before the fix, or with any
+// future regression in a collector.
 type panickingCollector struct{}
 
 func (p *panickingCollector) Name() string  { return "panico" }
-func (p *panickingCollector) Help() string  { return "coletor que entra em pânico" }
+func (p *panickingCollector) Help() string  { return "collector that panics" }
 func (p *panickingCollector) Enabled() bool { return true }
 
 func (p *panickingCollector) Collect(_ context.Context, _ *sql.DB, _ chan<- prometheus.Metric) error {
-	panic("bug simulado dentro de um coletor")
+	panic("simulated bug inside a collector")
 }
 
-// Um pânico em qualquer coletor sobe pela goroutine e derruba o processo
-// inteiro do exporter — levando embora a coleta de todas as outras instâncias
-// monitoradas, não só a métrica com problema.
+// A panic in any collector propagates up the goroutine and takes down the
+// exporter's entire process — wiping out collection for all other monitored
+// instances, not just the metric with the problem.
 //
-// O Collect roda os coletores em goroutines próprias, e um pânico numa goroutine
-// não pode ser recuperado pelo chamador: o único lugar possível é dentro da
-// própria goroutine. Este teste fixa esse contrato de isolamento.
+// Collect runs the collectors in their own goroutines, and a panic in a
+// goroutine cannot be recovered by the caller: the only possible place is
+// inside the goroutine itself. This test pins down that isolation contract.
 func TestExporterSurvivesPanickingCollector(t *testing.T) {
 	db, mock, err := sqlmock.New(
 		sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp),
@@ -60,14 +60,14 @@ func TestExporterSurvivesPanickingCollector(t *testing.T) {
 
 	require.NotPanics(t, func() {
 		e.Collect(ch)
-	}, "um pânico num coletor derrubou o exporter inteiro")
+	}, "a panic in one collector took down the entire exporter")
 
 	close(ch)
 	<-done
 }
 
-// Após um pânico isolado, o coletor problemático deve ser contabilizado em
-// mariadb_scrape_errors_total e os demais devem continuar entregando métricas.
+// After an isolated panic, the problematic collector should be counted in
+// mariadb_scrape_errors_total and the others should keep delivering metrics.
 func TestExporterPanicIsCountedAsScrapeError(t *testing.T) {
 	db, mock, err := sqlmock.New(
 		sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp),
@@ -86,16 +86,15 @@ func TestExporterPanicIsCountedAsScrapeError(t *testing.T) {
 
 	families := gather(t, e)
 
-	// O coletor saudável continua funcionando apesar do vizinho ter entrado em
-	// pânico.
+	// The healthy collector keeps working despite its neighbor having panicked.
 	_, ok := familyValue(families, "fake_saudavel")
-	require.True(t, ok, "o coletor saudável parou por causa do pânico do outro")
+	require.True(t, ok, "the healthy collector stopped because of the other's panic")
 
-	// E o pânico é reportado como erro de scrape, não silenciado.
+	// And the panic is reported as a scrape error, not silenced.
 	errCount, ok := labeledValue(families, "mariadb_scrape_errors_total", "collector", "panico")
-	require.True(t, ok, "não há série de erro para o coletor que entrou em pânico")
-	require.Equal(t, float64(1), errCount, "o pânico deveria contar como erro de scrape")
+	require.True(t, ok, "there is no error series for the collector that panicked")
+	require.Equal(t, float64(1), errCount, "the panic should count as a scrape error")
 
 	success, _ := familyValue(families, "mariadb_scrape_success")
-	require.Equal(t, float64(0), success, "scrape_success deveria ser 0 após um pânico")
+	require.Equal(t, float64(0), success, "scrape_success should be 0 after a panic")
 }

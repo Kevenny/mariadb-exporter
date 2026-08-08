@@ -28,37 +28,37 @@ func TestParseVersion(t *testing.T) {
 			isMariaDB: true,
 		},
 		{
-			name:      "MariaDB 10.11 com sufixo de distribuição",
+			name:      "MariaDB 10.11 with distribution suffix",
 			full:      "10.11.6-MariaDB-1:10.11.6+maria~ubu2204",
 			comment:   "mariadb.org binary distribution",
 			wantMajor: 10, wantMinor: 11, wantPatch: 6,
 			isMariaDB: true,
 		},
 		{
-			// O MariaDB pode prefixar a versão com 5.5.5- para clientes legados;
-			// a versão real vem depois do prefixo.
-			name:      "prefixo de compatibilidade 5.5.5",
+			// MariaDB may prefix the version with 5.5.5- for legacy clients;
+			// the real version comes after the prefix.
+			name:      "5.5.5 compatibility prefix",
 			full:      "5.5.5-10.6.12-MariaDB",
 			comment:   "MariaDB Server",
 			wantMajor: 10, wantMinor: 6, wantPatch: 12,
 			isMariaDB: true,
 		},
 		{
-			name:      "MariaDB detectado apenas pelo comment",
+			name:      "MariaDB detected only from the comment",
 			full:      "10.5.20",
 			comment:   "MariaDB Server",
 			wantMajor: 10, wantMinor: 5, wantPatch: 20,
 			isMariaDB: true,
 		},
 		{
-			name:      "MySQL 8.0 não é MariaDB",
+			name:      "MySQL 8.0 is not MariaDB",
 			full:      "8.0.36",
 			comment:   "MySQL Community Server - GPL",
 			wantMajor: 8, wantMinor: 0, wantPatch: 36,
 			isMariaDB: false,
 		},
 		{
-			name:      "MySQL 5.7 não é MariaDB",
+			name:      "MySQL 5.7 is not MariaDB",
 			full:      "5.7.44-log",
 			comment:   "MySQL Community Server (GPL)",
 			wantMajor: 5, wantMinor: 7, wantPatch: 44,
@@ -96,7 +96,7 @@ func TestDetectVersionMariaDB(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Conectar contra MySQL deve falhar com erro descritivo (seções 2.1 e 20).
+// Connecting against MySQL must fail with a descriptive error (sections 2.1 and 20).
 func TestDetectVersionRejectsMySQL(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
@@ -111,12 +111,12 @@ func TestDetectVersionRejectsMySQL(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrNotMariaDB)
 
-	// A mensagem precisa ser acionável para quem está operando.
+	// The message needs to be actionable for whoever is operating it.
 	require.Contains(t, err.Error(), "8.0.36")
 	require.Contains(t, err.Error(), "mysqld_exporter")
 }
 
-// version_comment ausente não deve impedir a detecção.
+// A missing version_comment should not prevent detection.
 func TestDetectVersionWithoutVersionComment(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
@@ -142,10 +142,10 @@ func TestDetectVersionQueryError(t *testing.T) {
 
 	_, err = DetectVersion(context.Background(), db)
 	require.Error(t, err)
-	require.NotErrorIs(t, err, ErrNotMariaDB, "falha de conexão não é o mesmo que instância incompatível")
+	require.NotErrorIs(t, err, ErrNotMariaDB, "connection failure is not the same as incompatible instance")
 }
 
-// Refresh deve ligar as flags dos plugins ACTIVE e ignorar os demais.
+// Refresh should turn on the flags for ACTIVE plugins and ignore the rest.
 func TestFeatureDetectorRefresh(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
@@ -179,12 +179,12 @@ func TestFeatureDetectorRefresh(t *testing.T) {
 	require.True(t, f.HasUserStat)
 	require.True(t, f.HasQueryResponseTime)
 	require.True(t, f.HasMetadataLockInfo)
-	require.False(t, f.HasDisksPlugin, "plugin DISABLED não conta como disponível")
+	require.False(t, f.HasDisksPlugin, "a DISABLED plugin does not count as available")
 	require.False(t, f.HasGalera)
 	require.False(t, f.IsReplica)
 }
 
-// Plugin instalado mas com a coleta desligada não deve contar como disponível.
+// A plugin installed but with collection turned off should not count as available.
 func TestFeatureDetectorQueryResponseTimeStatsOff(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
@@ -211,7 +211,7 @@ func TestFeatureDetectorQueryResponseTimeStatsOff(t *testing.T) {
 	require.False(t, d.Features().HasUserStat)
 }
 
-// METADATA_LOCK_INFO exige MariaDB >= 10.0.7 (seção 2.2).
+// METADATA_LOCK_INFO requires MariaDB >= 10.0.7 (section 2.2).
 func TestFeatureDetectorMetadataLockVersionGate(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
@@ -229,14 +229,14 @@ func TestFeatureDetectorMetadataLockVersionGate(t *testing.T) {
 	mock.ExpectQuery("SHOW ALL SLAVES STATUS").
 		WillReturnRows(sqlmock.NewRows([]string{"Master_Host"}))
 
-	// 10.0.6 é anterior ao mínimo exigido.
+	// 10.0.6 is earlier than the required minimum.
 	d := NewFeatureDetector(db, ParseVersion("10.0.6-MariaDB", ""), log.NewNopLogger())
 	d.Refresh(context.Background())
 
 	require.False(t, d.Features().HasMetadataLockInfo)
 }
 
-// Erro em uma das consultas não deve zerar as demais features.
+// An error in one of the queries should not zero out the other features.
 func TestFeatureDetectorPartialFailure(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
@@ -255,16 +255,16 @@ func TestFeatureDetectorPartialFailure(t *testing.T) {
 	d.Refresh(context.Background())
 
 	f := d.Features()
-	require.True(t, f.HasUserStat, "falha na consulta de plugins não deve afetar userstat")
+	require.True(t, f.HasUserStat, "a failure querying plugins should not affect userstat")
 	require.True(t, f.IsReplica)
 	require.False(t, f.HasQueryResponseTime)
 }
 
 func TestIsTruthy(t *testing.T) {
 	for _, v := range []string{"ON", "on", "1", "YES", "true", "ALL", " ACTIVE "} {
-		require.True(t, isTruthy(v), "%q deveria ser verdadeiro", v)
+		require.True(t, isTruthy(v), "%q should be true", v)
 	}
 	for _, v := range []string{"OFF", "0", "NO", "false", "", "DEMAND"} {
-		require.False(t, isTruthy(v), "%q deveria ser falso", v)
+		require.False(t, isTruthy(v), "%q should be false", v)
 	}
 }

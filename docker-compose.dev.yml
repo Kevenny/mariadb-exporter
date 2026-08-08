@@ -1,14 +1,14 @@
-# Stack completa para testar o mariadb_exporter como data source de verdade:
-# MariaDB -> exporter -> Prometheus -> Grafana, igual ao fluxo que hoje existe
-# para o mysqld_exporter.
+# Full stack to test mariadb_exporter as a real data source:
+# MariaDB -> exporter -> Prometheus -> Grafana, just like the flow that exists
+# today for mysqld_exporter.
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 #
-#   Prometheus: http://localhost:9090  (Status > Targets para ver o scrape)
-#   Grafana:    http://localhost:3000  (admin/admin) -> dashboard "MariaDB Exporter"
+#   Prometheus: http://localhost:9090  (Status > Targets to see the scrape)
+#   Grafana:    http://localhost:3000  (admin/admin) -> "MariaDB Exporter" dashboard
 #
-# Este arquivo estende o docker-compose.yml da raiz (que já sobe MariaDB +
-# exporter); ele não deve ser usado sozinho.
+# This file extends the root docker-compose.yml (which already brings up
+# MariaDB + the exporter); it should not be used on its own.
 
 services:
   prometheus:
@@ -31,9 +31,9 @@ services:
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
       - ./dev/grafana/provisioning:/etc/grafana/provisioning:ro
-      # Monta os dashboards versionados do repositório: editar um JSON em
-      # dashboards/ reflete no Grafana em até 30s (updateIntervalSeconds), sem
-      # precisar reimportar nada.
+      # Mounts the repository's versioned dashboards: editing a JSON file in
+      # dashboards/ is reflected in Grafana within 30s (updateIntervalSeconds),
+      # with no need to re-import anything.
       - ./dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000:3000"

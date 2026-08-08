@@ -1,69 +1,73 @@
-# web-config.yml — TLS e/ou autenticação para os endpoints do mariadb_exporter.
+# web-config.yml — TLS and/or authentication for mariadb_exporter's endpoints.
 #
-# Habilite com:
+# Enable with:
 #   mariadb_exporter --web.config.file=/etc/mariadb_exporter/web-config.yml
 #
-# Sem esta flag, o exporter serve HTTP simples sem autenticação (comportamento
-# padrão de exporters Prometheus). Este arquivo é processado pelo
-# exporter-toolkit da Prometheus; a referência completa está em:
+# Without this flag, the exporter serves plain HTTP with no authentication
+# (the standard behavior for Prometheus exporters). This file is processed by
+# the Prometheus exporter-toolkit; the full reference is at:
 # https://github.com/prometheus/exporter-toolkit/blob/master/docs/web-configuration.md
 #
-# O arquivo contém hashes de senha e o caminho da chave privada — proteja-o:
+# The file contains password hashes and the private key path — protect it:
 #   chown root:mariadb_exporter /etc/mariadb_exporter/web-config.yml
 #   chmod 640 /etc/mariadb_exporter/web-config.yml
 
 # ---------------------------------------------------------------------------
 # Basic auth
 # ---------------------------------------------------------------------------
-# As senhas são armazenadas como hash bcrypt, nunca em texto claro. Gere um
-# hash com o htpasswd do Apache:
+# Passwords are stored as bcrypt hashes, never in plaintext. Generate a hash
+# with Apache's htpasswd:
 #
 #   htpasswd -nBC 10 "" | tr -d ':\n'
 #
-# (o comando pede a senha e imprime só o hash; o prefixo é $2y$ ou $2a$)
+# (the command prompts for the password and prints only the hash; the prefix
+# is $2y$ or $2a$)
 #
-# O hash abaixo corresponde à senha "senha_do_prometheus" — TROQUE antes de usar.
+# The hash below corresponds to the password "senha_do_prometheus" — CHANGE it
+# before use.
 #
-# ATENÇÃO: o basic auth se aplica a TODOS os endpoints, inclusive /health. Não é
-# possível excluir um path. Se você usa /health como health check de load
-# balancer, Kubernetes probe ou healthcheck do Docker, configure a sonda para
-# enviar a credencial — por exemplo, no Docker:
+# WARNING: basic auth applies to ALL endpoints, including /health. There is no
+# way to exclude a path. If you use /health as a load balancer health check,
+# Kubernetes probe, or Docker healthcheck, configure the probe to send the
+# credential — for example, in Docker:
 #
 #   healthcheck:
-#     test: ["CMD", "curl", "-fsk", "-u", "prometheus:SENHA", "https://localhost:9104/health"]
+#     test: ["CMD", "curl", "-fsk", "-u", "prometheus:PASSWORD", "https://localhost:9104/health"]
 #
-# Ou deixe a autenticação de fora e proteja o exporter por rede (bind em
-# 127.0.0.1 + firewall), que é o padrão de exporters Prometheus.
+# Or leave authentication out and protect the exporter at the network level
+# (bind to 127.0.0.1 + firewall), which is the standard for Prometheus
+# exporters.
 basic_auth_users:
   prometheus: $2a$10$YlKXKGr6Zy0o67vkjDv4MOLwG/2vXPCq1ZayOB55cQJqevY3fbfRu
 
 # ---------------------------------------------------------------------------
 # TLS
 # ---------------------------------------------------------------------------
-# Descomente o bloco para servir HTTPS. Lembre-se de ajustar o scheme no lado
-# de quem faz o scrape:
-#   - Prometheus: `scheme: https` no scrape_config
-#   - PMM:        `--scheme=https` no `pmm-admin add external`
+# Uncomment the block to serve HTTPS. Remember to adjust the scheme on
+# whoever does the scrape:
+#   - Prometheus: `scheme: https` in the scrape_config
+#   - PMM:        `--scheme=https` in `pmm-admin add external`
 #
-# Se o certificado for autoassinado, o coletor precisa confiar na CA
-# (`ca_file` no Prometheus) ou desabilitar a verificação
-# (`insecure_skip_verify: true` — evite em produção).
+# If the certificate is self-signed, the scraper needs to trust the CA
+# (`ca_file` in Prometheus) or disable verification
+# (`insecure_skip_verify: true` — avoid in production).
 #
 #tls_server_config:
 #  cert_file: /etc/mariadb_exporter/tls/exporter.crt
 #  key_file:  /etc/mariadb_exporter/tls/exporter.key
 #
-#  # Versão mínima do TLS. TLS12 é o piso recomendado; use TLS13 se todos os
-#  # clientes suportarem.
+#  # Minimum TLS version. TLS12 is the recommended floor; use TLS13 if all
+#  # clients support it.
 #  min_version: TLS12
 #
-#  # mTLS: exige que o cliente (Prometheus/pmm-agent) apresente um certificado
-#  # assinado pela CA informada. É a proteção mais forte, e dispensa basic auth.
+#  # mTLS: requires the client (Prometheus/pmm-agent) to present a certificate
+#  # signed by the given CA. This is the strongest protection, and makes basic
+#  # auth unnecessary.
 #  #client_auth_type: RequireAndVerifyClientCert
 #  #client_ca_file: /etc/mariadb_exporter/tls/ca.crt
 
 # ---------------------------------------------------------------------------
-# Exemplo de scrape_config do Prometheus para este exporter com TLS + auth
+# Example Prometheus scrape_config for this exporter with TLS + auth
 # ---------------------------------------------------------------------------
 # scrape_configs:
 #   - job_name: 'mariadb'

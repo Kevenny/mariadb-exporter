@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A tabela do MariaDB traz contagens por bucket; o histograma Prometheus exige
-// contagens cumulativas. Este teste fixa essa conversão.
+// MariaDB's table carries per-bucket counts; the Prometheus histogram
+// requires cumulative counts. This test pins down that conversion.
 func TestQueryResponseTimeCollector(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -25,23 +25,23 @@ func TestQueryResponseTimeCollector(t *testing.T) {
 	c := NewQueryResponseTimeCollector(true, testLogger(), allFeatures())
 	metrics, err := runCollect(t, c, db)
 	require.NoError(t, err)
-	require.Len(t, metrics, 1, "deve emitir um único histograma")
+	require.Len(t, metrics, 1, "should emit a single histogram")
 
 	snaps := snapshot(t, metrics)
 	h := snaps[0]
 
 	require.Equal(t, "mariadb_query_response_time_seconds", h.Name)
 
-	// _count inclui a linha TOO LONG: 10+5+20+3+2 = 40.
+	// _count includes the TOO LONG row: 10+5+20+3+2 = 40.
 	require.Equal(t, uint64(40), h.SampleCount)
 
-	// _sum soma os TOTAL de todas as linhas, inclusive TOO LONG.
+	// _sum adds up the TOTAL of every row, including TOO LONG.
 	require.InDelta(t, 32.510045, h.SampleSum, 0.000001)
 
-	// TOO LONG não gera bucket: apenas os 4 limites numéricos.
+	// TOO LONG does not generate a bucket: only the 4 numeric bounds.
 	require.Len(t, h.Buckets, 4)
 
-	// Contagens cumulativas.
+	// Cumulative counts.
 	require.Equal(t, uint64(10), h.Buckets[0.000001])
 	require.Equal(t, uint64(15), h.Buckets[0.000010])
 	require.Equal(t, uint64(35), h.Buckets[0.001000])
@@ -50,8 +50,8 @@ func TestQueryResponseTimeCollector(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Buckets fora de ordem na tabela devem ser ordenados antes de acumular, senão
-// as contagens cumulativas saem erradas.
+// Out-of-order buckets in the table must be sorted before accumulating,
+// otherwise the cumulative counts come out wrong.
 func TestQueryResponseTimeCollectorSortsBuckets(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -74,7 +74,7 @@ func TestQueryResponseTimeCollectorSortsBuckets(t *testing.T) {
 	require.Equal(t, uint64(33), h.SampleCount)
 }
 
-// Plugin inativo: zero métricas, sem erro (seção 20).
+// Inactive plugin: zero metrics, no error (section 20).
 func TestQueryResponseTimeCollectorPluginInactive(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -84,10 +84,10 @@ func TestQueryResponseTimeCollectorPluginInactive(t *testing.T) {
 	metrics, err := runCollect(t, c, db)
 	require.NoError(t, err)
 	require.Empty(t, metrics)
-	require.NoError(t, mock.ExpectationsWereMet(), "nenhuma query deveria ter sido executada")
+	require.NoError(t, mock.ExpectationsWereMet(), "no query should have been executed")
 }
 
-// Tabela vazia (plugin acabou de ser habilitado): sem histograma e sem erro.
+// Empty table (plugin just enabled): no histogram and no error.
 func TestQueryResponseTimeCollectorEmptyTable(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -101,7 +101,7 @@ func TestQueryResponseTimeCollectorEmptyTable(t *testing.T) {
 	require.Empty(t, metrics)
 }
 
-// Somente a linha TOO LONG: o count é contabilizado mesmo sem nenhum bucket.
+// Only the TOO LONG row: the count is tallied even with no bucket at all.
 func TestQueryResponseTimeCollectorOnlyTooLong(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -120,7 +120,7 @@ func TestQueryResponseTimeCollectorOnlyTooLong(t *testing.T) {
 	require.Empty(t, h.Buckets)
 }
 
-// Linhas com TIME não numérico são ignoradas sem derrubar o scrape.
+// Rows with a non-numeric TIME are ignored without breaking the scrape.
 func TestQueryResponseTimeCollectorIgnoresInvalidRows(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -137,5 +137,5 @@ func TestQueryResponseTimeCollectorIgnoresInvalidRows(t *testing.T) {
 	h := snapshot(t, metrics)[0]
 	require.Len(t, h.Buckets, 1)
 	require.Equal(t, uint64(4), h.Buckets[0.001000])
-	require.Equal(t, uint64(4), h.SampleCount, "a linha inválida não deve entrar no count")
+	require.Equal(t, uint64(4), h.SampleCount, "the invalid row should not enter the count")
 }

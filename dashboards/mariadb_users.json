@@ -1,12 +1,12 @@
 {
-  "title": "MariaDB — Usuários & Acesso",
+  "title": "MariaDB — Users & Access",
   "uid": "mariadb-users-access",
   "timezone": "browser",
   "schemaVersion": 39,
   "refresh": "30s",
   "tags": ["mariadb", "userstat", "security"],
   "time": { "from": "now-1h", "to": "now" },
-  "description": "Requer userstat=ON (SET GLOBAL userstat = ON). Sem isso os coletores userstat e clientstat expõem zero métricas.",
+  "description": "Requires userstat=ON (SET GLOBAL userstat = ON). Without it, the userstat and clientstat collectors expose zero metrics.",
   "templating": {
     "list": [
       { "name": "datasource", "type": "datasource", "query": "prometheus" },
@@ -51,15 +51,15 @@
   "panels": [
     {
       "type": "row",
-      "title": "Segurança e conectividade",
+      "title": "Security and Connectivity",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
       "collapsed": false,
       "panels": []
     },
     {
       "id": 1,
-      "title": "userstat habilitado?",
-      "description": "Sem userstat=ON as métricas por usuário/tabela/índice não existem.",
+      "title": "userstat enabled?",
+      "description": "Without userstat=ON, per-user/table/index metrics don't exist.",
       "type": "stat",
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -86,8 +86,8 @@
     },
     {
       "id": 2,
-      "title": "Acessos negados",
-      "description": "Tentativas de acesso rejeitadas por usuário. Um pico pode indicar credencial expirada numa aplicação — ou tentativa de força bruta.",
+      "title": "Access denied",
+      "description": "Rejected access attempts by user. A spike may indicate an expired credential in an application — or a brute-force attempt.",
       "type": "timeseries",
       "gridPos": { "h": 5, "w": 9, "x": 6, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -102,8 +102,8 @@
     },
     {
       "id": 3,
-      "title": "Conexões abortadas (servidor)",
-      "description": "aborted_connects são tentativas que falharam na autenticação/handshake; aborted_clients são clientes que sumiram sem fechar a conexão.",
+      "title": "Aborted connections (server)",
+      "description": "aborted_connects are attempts that failed authentication/handshake; aborted_clients are clients that disappeared without closing the connection.",
       "type": "timeseries",
       "gridPos": { "h": 5, "w": 9, "x": 15, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -123,15 +123,15 @@
     },
     {
       "type": "row",
-      "title": "Conexões",
+      "title": "Connections",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
       "collapsed": false,
       "panels": []
     },
     {
       "id": 4,
-      "title": "Uso de max_connections (%)",
-      "description": "Proximidade de max_connections causa erro 'Too many connections'. Considere pool na aplicação antes de aumentar o limite.",
+      "title": "max_connections usage (%)",
+      "description": "Getting close to max_connections causes a 'Too many connections' error. Consider pooling in the application before raising the limit.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 7 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -160,7 +160,7 @@
     },
     {
       "id": 5,
-      "title": "Conexões simultâneas por usuário",
+      "title": "Concurrent connections by user",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 7 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -175,8 +175,8 @@
     },
     {
       "id": 6,
-      "title": "Novas conexões por usuário",
-      "description": "Taxa alta com poucas conexões simultâneas indica ausência de pool: a aplicação abre e fecha conexão a cada operação.",
+      "title": "New connections by user",
+      "description": "A high rate with few concurrent connections indicates the absence of pooling: the application opens and closes a connection for every operation.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 15 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -191,8 +191,8 @@
     },
     {
       "id": 7,
-      "title": "Conexões perdidas por usuário",
-      "description": "Conexões encerradas anormalmente — timeout de rede, wait_timeout, ou processo do cliente morto.",
+      "title": "Lost connections by user",
+      "description": "Connections terminated abnormally — network timeout, wait_timeout, or a dead client process.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 15 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -207,15 +207,15 @@
     },
     {
       "type": "row",
-      "title": "Perfil de carga por usuário",
+      "title": "Load Profile by User",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
       "collapsed": false,
       "panels": []
     },
     {
       "id": 8,
-      "title": "Comandos por usuário (SELECT / UPDATE / outros)",
-      "description": "Mostra o perfil de cada usuário: leitura, escrita ou administrativo.",
+      "title": "Commands by user (SELECT / UPDATE / other)",
+      "description": "Shows each user's profile: read, write, or administrative.",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -232,7 +232,7 @@
         },
         {
           "expr": "rate(mariadb_user_other_commands_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m])",
-          "legendFormat": "{{user}} outros",
+          "legendFormat": "{{user}} other",
           "refId": "C"
         }
       ],
@@ -240,15 +240,15 @@
     },
     {
       "id": 9,
-      "title": "Eficiência de leitura por usuário",
-      "description": "rows_read muito acima de rows_sent significa que o servidor varre muitas linhas para devolver poucas — típico de falta de índice.",
+      "title": "Read efficiency by user",
+      "description": "rows_read far above rows_sent means the server scans many rows to return few — typical of a missing index.",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 24 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
           "expr": "rate(mariadb_user_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m]) / clamp_min(rate(mariadb_user_rows_sent_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\", user=~\"$user\"}[5m]), 0.001)",
-          "legendFormat": "{{user}} lidas/enviadas",
+          "legendFormat": "{{user}} read/sent",
           "refId": "A"
         }
       ],
@@ -267,7 +267,7 @@
     },
     {
       "id": 10,
-      "title": "Top 10 usuários por linhas lidas",
+      "title": "Top 10 users by rows read",
       "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 33 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -284,14 +284,14 @@
           "id": "organize",
           "options": {
             "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true },
-            "renameByName": { "Value": "Linhas lidas/s" }
+            "renameByName": { "Value": "Rows read/s" }
           }
         }
       ]
     },
     {
       "id": 11,
-      "title": "Top 10 usuários por linhas alteradas",
+      "title": "Top 10 users by rows changed",
       "type": "table",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 33 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -308,22 +308,22 @@
           "id": "organize",
           "options": {
             "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true },
-            "renameByName": { "Value": "Linhas alteradas/s" }
+            "renameByName": { "Value": "Rows changed/s" }
           }
         }
       ]
     },
     {
       "type": "row",
-      "title": "Por origem (clientstat)",
+      "title": "By Origin (clientstat)",
       "gridPos": { "h": 1, "w": 24, "x": 0, "y": 41 },
       "collapsed": false,
       "panels": []
     },
     {
       "id": 12,
-      "title": "Conexões por host de origem",
-      "description": "Do CLIENT_STATISTICS: agrupa por IP/host de onde a conexão veio, independente do usuário.",
+      "title": "Connections by source host",
+      "description": "From CLIENT_STATISTICS: groups by the IP/host the connection came from, regardless of user.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 42 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -338,19 +338,19 @@
     },
     {
       "id": 13,
-      "title": "Tráfego de linhas por host de origem",
+      "title": "Row traffic by source host",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 42 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
       "targets": [
         {
           "expr": "rate(mariadb_client_rows_read_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
-          "legendFormat": "{{client}} lidas/s",
+          "legendFormat": "{{client}} read/s",
           "refId": "A"
         },
         {
           "expr": "rate(mariadb_client_rows_sent_total{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}[5m])",
-          "legendFormat": "{{client}} enviadas/s",
+          "legendFormat": "{{client}} sent/s",
           "refId": "B"
         }
       ],

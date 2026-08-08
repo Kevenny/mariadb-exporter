@@ -10,36 +10,36 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// variableMapping liga uma variável de SHOW GLOBAL VARIABLES a uma métrica.
+// variableMapping links a SHOW GLOBAL VARIABLES variable to a metric.
 type variableMapping struct {
 	variable string
 	metric   string
 	help     string
 }
 
-// globalVariableMappings é a lista explícita da seção 2.2. Todas as variáveis
-// aqui são de configuração, portanto expostas como gauge.
+// globalVariableMappings is the explicit list from section 2.2. All variables
+// here are configuration values, so they are exposed as gauges.
 var globalVariableMappings = []variableMapping{
-	{"max_connections", "max_connections", "Valor de max_connections."},
-	{"innodb_buffer_pool_size", "innodb_buffer_pool_size_bytes", "Tamanho do InnoDB buffer pool em bytes."},
-	{"query_cache_size", "query_cache_size_bytes", "Tamanho do query cache em bytes."},
-	{"thread_cache_size", "thread_cache_size", "Valor de thread_cache_size."},
-	{"wait_timeout", "wait_timeout_seconds", "Valor de wait_timeout em segundos."},
-	{"interactive_timeout", "interactive_timeout_seconds", "Valor de interactive_timeout em segundos."},
-	{"userstat", "userstat_enabled", "1 se a variável userstat está ON, 0 caso contrário."},
+	{"max_connections", "max_connections", "Value of max_connections."},
+	{"innodb_buffer_pool_size", "innodb_buffer_pool_size_bytes", "InnoDB buffer pool size in bytes."},
+	{"query_cache_size", "query_cache_size_bytes", "Query cache size in bytes."},
+	{"thread_cache_size", "thread_cache_size", "Value of thread_cache_size."},
+	{"wait_timeout", "wait_timeout_seconds", "Value of wait_timeout in seconds."},
+	{"interactive_timeout", "interactive_timeout_seconds", "Value of interactive_timeout in seconds."},
+	{"userstat", "userstat_enabled", "1 if the userstat variable is ON, 0 otherwise."},
 }
 
-// GlobalVariablesCollector coleta um subconjunto explícito de
+// GlobalVariablesCollector collects an explicit subset of
 // SHOW GLOBAL VARIABLES.
 type GlobalVariablesCollector struct {
 	base
 	descs map[string]*prometheus.Desc
 }
 
-// NewGlobalVariablesCollector cria o coletor global_variables.
+// NewGlobalVariablesCollector creates the global_variables collector.
 func NewGlobalVariablesCollector(enabled bool, logger log.Logger, features FeatureProvider) *GlobalVariablesCollector {
 	c := &GlobalVariablesCollector{
-		base:  newBase("global_variables", "Subconjunto selecionado de SHOW GLOBAL VARIABLES.", enabled, logger, features),
+		base:  newBase("global_variables", "Selected subset of SHOW GLOBAL VARIABLES.", enabled, logger, features),
 		descs: make(map[string]*prometheus.Desc, len(globalVariableMappings)),
 	}
 
@@ -50,7 +50,7 @@ func NewGlobalVariablesCollector(enabled bool, logger log.Logger, features Featu
 	return c
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 func (c *GlobalVariablesCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	rows, err := db.QueryContext(ctx, "SHOW GLOBAL VARIABLES")
 	if err != nil {
@@ -72,10 +72,10 @@ func (c *GlobalVariablesCollector) Collect(ctx context.Context, db *sql.DB, ch c
 			continue
 		}
 
-		// parseFloat converte ON/OFF em 1/0, o que cobre userstat_enabled.
+		// parseFloat converts ON/OFF to 1/0, which covers userstat_enabled.
 		v, err := parseFloat(string(value))
 		if err != nil {
-			_ = level.Debug(c.Logger()).Log("msg", "variável global ignorada", "variavel", name, "err", err)
+			_ = level.Debug(c.Logger()).Log("msg", "global variable ignored", "variable", name, "err", err)
 			continue
 		}
 

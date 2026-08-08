@@ -41,13 +41,13 @@ func TestUserStatCollector(t *testing.T) {
 	require.Equal(t, float64(42), requireMetric(t, snaps, "mariadb_user_total_connections_total", app).Value)
 	require.Equal(t, float64(7), requireMetric(t, snaps, "mariadb_user_access_denied_total", app).Value)
 
-	// 10 métricas por usuário, 2 usuários.
+	// 10 metrics per user, 2 users.
 	require.Len(t, snaps, 20)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Com userstat=OFF o coletor não deve nem executar a query, e deve retornar
-// zero métricas sem erro (seção 20 da especificação).
+// With userstat=OFF the collector should not even run the query, and should
+// return zero metrics without error (section 20 of the specification).
 func TestUserStatCollectorUserStatOff(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -57,10 +57,10 @@ func TestUserStatCollectorUserStatOff(t *testing.T) {
 	metrics, err := runCollect(t, c, db)
 	require.NoError(t, err)
 	require.Empty(t, metrics)
-	require.NoError(t, mock.ExpectationsWereMet(), "nenhuma query deveria ter sido executada")
+	require.NoError(t, mock.ExpectationsWereMet(), "no query should have been executed")
 }
 
-// Valores NULL são omitidos em vez de virarem zero.
+// NULL values are omitted instead of becoming zero.
 func TestUserStatCollectorNullValues(t *testing.T) {
 	db, mock := newMockDB(t)
 

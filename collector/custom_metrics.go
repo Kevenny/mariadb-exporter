@@ -15,29 +15,30 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Usage é o tipo de uso de uma coluna no YAML de custom metrics.
+// Usage is the usage type of a column in the custom metrics YAML.
 const (
 	usageLabel   = "LABEL"
 	usageCounter = "COUNTER"
 	usageGauge   = "GAUGE"
 )
 
-// columnSpec descreve como uma coluna do result set deve ser tratada.
+// columnSpec describes how a column of the result set should be handled.
 type columnSpec struct {
 	Usage       string `yaml:"usage"`
 	Description string `yaml:"description"`
 }
 
-// metricSpec é a definição de uma métrica customizada no YAML.
+// metricSpec is the definition of a custom metric in the YAML.
 //
-// O formato segue a especificação (seção 10): a chave do mapa é o nome da
-// métrica, `query` é o SQL e `metrics` é uma lista de mapas de coluna -> spec.
+// The format follows the specification (section 10): the map key is the
+// metric name, `query` is the SQL and `metrics` is a list of column -> spec
+// maps.
 type metricSpec struct {
 	Query   string                  `yaml:"query"`
 	Metrics []map[string]columnSpec `yaml:"metrics"`
 }
 
-// customMetric é a forma compilada de um metricSpec, pronta para o scrape.
+// customMetric is the compiled form of a metricSpec, ready for scraping.
 type customMetric struct {
 	name       string
 	query      string
@@ -47,22 +48,22 @@ type customMetric struct {
 	valueKinds map[string]prometheus.ValueType
 }
 
-// CustomMetricsCollector executa queries definidas pelo usuário em arquivos YAML.
+// CustomMetricsCollector runs user-defined queries from YAML files.
 type CustomMetricsCollector struct {
 	base
 	metrics []customMetric
 }
 
-// NewCustomMetricsCollector carrega os arquivos YAML informados e devolve o
-// coletor. Um arquivo inválido é um erro de configuração e aborta o startup.
+// NewCustomMetricsCollector loads the given YAML files and returns the
+// collector. An invalid file is a configuration error and aborts startup.
 //
-// constLabels são os metadados de integração com o PMM (service_name, cluster,
-// environment, replication_set). Aplicá-los também às custom metrics é o que
-// permite filtrá-las nos dashboards junto com as métricas nativas — sem isso, um
-// painel com filtro por cluster simplesmente não encontraria a série.
+// constLabels are the PMM integration metadata (service_name, cluster,
+// environment, replication_set). Applying them to custom metrics as well is
+// what allows filtering them in dashboards alongside the native metrics —
+// without this, a panel filtered by cluster simply wouldn't find the series.
 func NewCustomMetricsCollector(paths []string, logger log.Logger, features FeatureProvider, constLabels prometheus.Labels) (*CustomMetricsCollector, error) {
 	c := &CustomMetricsCollector{
-		base: newBase("custom_metrics", "Métricas definidas pelo usuário em arquivos YAML.", len(paths) > 0, logger, features),
+		base: newBase("custom_metrics", "User-defined metrics from YAML files.", len(paths) > 0, logger, features),
 	}
 
 	for _, path := range paths {
@@ -76,7 +77,7 @@ func NewCustomMetricsCollector(paths []string, logger log.Logger, features Featu
 	return c, nil
 }
 
-// loadCustomMetricsFile lê e compila um arquivo YAML de custom metrics.
+// loadCustomMetricsFile reads and compiles a custom metrics YAML file.
 func loadCustomMetricsFile(path string, constLabels prometheus.Labels) ([]customMetric, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -85,11 +86,11 @@ func loadCustomMetricsFile(path string, constLabels prometheus.Labels) ([]custom
 
 	var raw map[string]metricSpec
 	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("YAML inválido: %w", err)
+		return nil, fmt.Errorf("invalid YAML: %w", err)
 	}
 
-	// Os nomes são ordenados para que a ordem de registro seja determinística
-	// entre execuções, já que a iteração de mapa em Go é aleatória.
+	// The names are sorted so that registration order is deterministic across
+	// runs, since map iteration in Go is random.
 	names := make([]string, 0, len(raw))
 	for name := range raw {
 		names = append(names, name)
@@ -108,26 +109,26 @@ func loadCustomMetricsFile(path string, constLabels prometheus.Labels) ([]custom
 	return out, nil
 }
 
-// metricNameRe e labelNameRe são as gramáticas de nome do Prometheus. Um nome
-// fora delas faz o client_golang entrar em pânico ao construir a métrica, o que
-// derrubaria o exporter em runtime — por isso a validação acontece no load, onde
-// o erro é apenas uma falha de configuração no startup.
+// metricNameRe and labelNameRe are Prometheus's name grammars. A name outside
+// them makes client_golang panic when building the metric, which would bring
+// down the exporter at runtime — that's why validation happens at load time,
+// where the error is just a startup configuration failure.
 var (
 	metricNameRe = regexp.MustCompile(`^[a-zA-Z_:][a-zA-Z0-9_:]*$`)
 	labelNameRe  = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 )
 
-// compileCustomMetric valida o spec e pré-calcula os Descs.
+// compileCustomMetric validates the spec and precomputes the Descs.
 func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.Labels) (*customMetric, error) {
 	if strings.TrimSpace(spec.Query) == "" {
-		return nil, fmt.Errorf("métrica %q: campo query é obrigatório", name)
+		return nil, fmt.Errorf("metric %q: query field is required", name)
 	}
 	if len(spec.Metrics) == 0 {
-		return nil, fmt.Errorf("métrica %q: campo metrics é obrigatório", name)
+		return nil, fmt.Errorf("metric %q: metrics field is required", name)
 	}
 	if !metricNameRe.MatchString(name) {
 		return nil, fmt.Errorf(
-			"métrica %q: nome inválido para o Prometheus (use apenas letras, dígitos, _ e :, começando por letra, _ ou :)",
+			"metric %q: invalid name for Prometheus (use only letters, digits, _ and :, starting with a letter, _ or :)",
 			name,
 		)
 	}
@@ -139,8 +140,8 @@ func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.La
 		valueKinds: make(map[string]prometheus.ValueType),
 	}
 
-	// Primeiro passe: separa colunas de label das de valor, pois os Descs das
-	// colunas de valor precisam conhecer todos os labels.
+	// First pass: separates label columns from value columns, since the Descs
+	// of the value columns need to know all labels.
 	type valueCol struct {
 		column      string
 		description string
@@ -148,9 +149,9 @@ func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.La
 	}
 	var valueCols []valueCol
 
-	// Uma coluna só pode ter um papel: repetida como LABEL geraria labels
-	// duplicados no Desc (pânico no client_golang), e declarada como LABEL e
-	// valor ao mesmo tempo seria ambígua.
+	// A column can only have one role: repeated as LABEL would generate
+	// duplicate labels in the Desc (panic in client_golang), and declared as
+	// LABEL and value at the same time would be ambiguous.
 	seen := make(map[string]string)
 
 	for _, entry := range spec.Metrics {
@@ -159,7 +160,7 @@ func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.La
 
 			if previous, dup := seen[column]; dup {
 				return nil, fmt.Errorf(
-					"métrica %q: coluna %q declarada mais de uma vez (como %s e %s)",
+					"metric %q: column %q declared more than once (as %s and %s)",
 					name, column, previous, usage,
 				)
 			}
@@ -169,7 +170,7 @@ func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.La
 			case usageLabel:
 				if !labelNameRe.MatchString(column) {
 					return nil, fmt.Errorf(
-						"métrica %q: %q não é um nome de label válido para o Prometheus (use apenas letras, dígitos e _, começando por letra ou _)",
+						"metric %q: %q is not a valid Prometheus label name (use only letters, digits and _, starting with a letter or _)",
 						name, column,
 					)
 				}
@@ -180,7 +181,7 @@ func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.La
 				valueCols = append(valueCols, valueCol{column, colSpec.Description, prometheus.GaugeValue})
 			default:
 				return nil, fmt.Errorf(
-					"métrica %q, coluna %q: usage %q inválido (use LABEL, COUNTER ou GAUGE)",
+					"metric %q, column %q: invalid usage %q (use LABEL, COUNTER or GAUGE)",
 					name, column, colSpec.Usage,
 				)
 			}
@@ -188,24 +189,25 @@ func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.La
 	}
 
 	if len(valueCols) == 0 {
-		return nil, fmt.Errorf("métrica %q: é necessária ao menos uma coluna COUNTER ou GAUGE", name)
+		return nil, fmt.Errorf("metric %q: at least one COUNTER or GAUGE column is required", name)
 	}
 
 	for _, vc := range valueCols {
 		help := vc.description
 		if help == "" {
-			help = fmt.Sprintf("Custom metric %s (coluna %s).", name, vc.column)
+			help = fmt.Sprintf("Custom metric %s (column %s).", name, vc.column)
 		}
 
-		// Com uma única coluna de valor, o nome da métrica é o nome declarado no
-		// YAML; com várias, o nome da coluna é sufixado para evitar colisão.
+		// With a single value column, the metric name is the one declared in
+		// the YAML; with several, the column name is suffixed to avoid
+		// collisions.
 		metricName := name
 		if len(valueCols) > 1 {
 			metricName = name + "_" + vc.column
-			// O sufixo entra no nome final, então precisa manter o nome válido.
+			// The suffix goes into the final name, so it needs to stay valid.
 			if !metricNameRe.MatchString(metricName) {
 				return nil, fmt.Errorf(
-					"métrica %q: a coluna %q gera o nome inválido %q para o Prometheus",
+					"metric %q: column %q generates the invalid Prometheus name %q",
 					name, vc.column, metricName,
 				)
 			}
@@ -219,14 +221,14 @@ func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.La
 	return cm, nil
 }
 
-// Collect implementa Collector. Um erro em uma query não impede a execução das
-// demais; o primeiro erro é devolvido ao final.
+// Collect implements Collector. An error in one query does not prevent the
+// others from running; the first error is returned at the end.
 func (c *CustomMetricsCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	var firstErr error
 
 	for _, cm := range c.metrics {
 		if err := c.collectOne(ctx, db, ch, cm); err != nil {
-			_ = level.Error(c.Logger()).Log("msg", "custom metric falhou", "metrica", cm.name, "err", err)
+			_ = level.Error(c.Logger()).Log("msg", "custom metric failed", "metric", cm.name, "err", err)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("custom metric %q: %w", cm.name, err)
 			}
@@ -248,8 +250,8 @@ func (c *CustomMetricsCollector) collectOne(ctx context.Context, db *sql.DB, ch 
 		return err
 	}
 
-	// Índice de coluna por nome (case-insensitive) para localizar labels e
-	// valores independentemente da ordem no SELECT.
+	// Column index by name (case-insensitive) to locate labels and values
+	// regardless of the order in the SELECT.
 	index := make(map[string]int, len(columns))
 	for i, col := range columns {
 		index[strings.ToLower(col)] = i
@@ -257,7 +259,7 @@ func (c *CustomMetricsCollector) collectOne(ctx context.Context, db *sql.DB, ch 
 
 	for _, want := range append(append([]string{}, cm.labelCols...), cm.valueCols...) {
 		if _, ok := index[strings.ToLower(want)]; !ok {
-			return fmt.Errorf("coluna %q declarada no YAML não existe no result set da query", want)
+			return fmt.Errorf("column %q declared in the YAML does not exist in the query's result set", want)
 		}
 	}
 
@@ -272,9 +274,9 @@ func (c *CustomMetricsCollector) collectOne(ctx context.Context, db *sql.DB, ch 
 			return err
 		}
 
-		// Colunas de label podem conter qualquer coisa — inclusive blobs
-		// binários, dependendo da query do operador. Sanitizar evita o pânico do
-		// client_golang em labels que não são UTF-8 válido.
+		// Label columns can contain anything — including binary blobs,
+		// depending on the operator's query. Sanitizing avoids client_golang
+		// panicking on labels that are not valid UTF-8.
 		labelValues := make([]string, 0, len(cm.labelCols))
 		for _, col := range cm.labelCols {
 			labelValues = append(labelValues, sanitizeLabel(string(values[index[strings.ToLower(col)]])))
@@ -286,8 +288,8 @@ func (c *CustomMetricsCollector) collectOne(ctx context.Context, db *sql.DB, ch 
 			v, err := parseFloat(raw)
 			if err != nil {
 				_ = level.Debug(c.Logger()).Log(
-					"msg", "valor de custom metric ignorado",
-					"metrica", cm.name, "coluna", col, "valor", raw, "err", err,
+					"msg", "custom metric value ignored",
+					"metric", cm.name, "column", col, "value", raw, "err", err,
 				)
 				continue
 			}

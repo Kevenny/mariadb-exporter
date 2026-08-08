@@ -1,5 +1,5 @@
 {
-  "title": "MariaDB — Replicação",
+  "title": "MariaDB — Replication",
   "uid": "mariadb-replication",
   "timezone": "browser",
   "schemaVersion": 39,
@@ -38,7 +38,7 @@
       },
       {
         "name": "connection_name",
-        "label": "Conexão (multi-source)",
+        "label": "Connection (multi-source)",
         "type": "query",
         "datasource": { "type": "prometheus", "uid": "${datasource}" },
         "query": "label_values(mariadb_slave_sql_running{cluster=~\"$cluster\", environment=~\"$environment\", service_name=~\"$service_name\"}, connection_name)",
@@ -51,8 +51,8 @@
   "panels": [
     {
       "id": 1,
-      "title": "Réplicas saudáveis",
-      "description": "Conexões de replicação com as duas threads (IO e SQL) rodando.",
+      "title": "Healthy replicas",
+      "description": "Replication connections with both threads (IO and SQL) running.",
       "type": "stat",
       "gridPos": { "h": 5, "w": 5, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -73,8 +73,8 @@
     },
     {
       "id": 2,
-      "title": "Réplicas com thread parada",
-      "description": "Qualquer thread (IO ou SQL) parada interrompe a replicação.",
+      "title": "Replicas with a stopped thread",
+      "description": "Any thread (IO or SQL) stopped interrupts replication.",
       "type": "stat",
       "gridPos": { "h": 5, "w": 5, "x": 5, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -95,7 +95,7 @@
     },
     {
       "id": 3,
-      "title": "Atraso máximo (s)",
+      "title": "Maximum lag (s)",
       "type": "stat",
       "gridPos": { "h": 5, "w": 5, "x": 10, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -121,8 +121,8 @@
     },
     {
       "id": 4,
-      "title": "Réplicas com erro",
-      "description": "last_errno diferente de zero indica que a replicação parou por erro de aplicação de evento.",
+      "title": "Replicas with error",
+      "description": "A non-zero last_errno indicates replication stopped due to an event application error.",
       "type": "stat",
       "gridPos": { "h": 5, "w": 9, "x": 15, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -143,8 +143,8 @@
     },
     {
       "id": 5,
-      "title": "Estado das conexões de replicação",
-      "description": "Uma linha por conexão. O MariaDB suporta multi-source: connection_name vazio é a conexão default.",
+      "title": "Replication connection state",
+      "description": "One row per connection. MariaDB supports multi-source: an empty connection_name is the default connection.",
       "type": "table",
       "gridPos": { "h": 9, "w": 24, "x": 0, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -183,8 +183,8 @@
             "renameByName": {
               "Value #SQL": "SQL thread",
               "Value #IO": "IO thread",
-              "Value #LAG": "Atraso (s)",
-              "Value #ERR": "Último erro"
+              "Value #LAG": "Lag (s)",
+              "Value #ERR": "Last error"
             }
           }
         }
@@ -198,7 +198,7 @@
               {
                 "id": "mappings",
                 "value": [
-                  { "type": "value", "options": { "0": { "text": "PARADA", "color": "red", "index": 0 }, "1": { "text": "OK", "color": "green", "index": 1 } } }
+                  { "type": "value", "options": { "0": { "text": "STOPPED", "color": "red", "index": 0 }, "1": { "text": "OK", "color": "green", "index": 1 } } }
                 ]
               },
               { "id": "custom.cellOptions", "value": { "type": "color-text" } }
@@ -210,7 +210,7 @@
               {
                 "id": "mappings",
                 "value": [
-                  { "type": "value", "options": { "0": { "text": "PARADA", "color": "red", "index": 0 }, "1": { "text": "OK", "color": "green", "index": 1 } } }
+                  { "type": "value", "options": { "0": { "text": "STOPPED", "color": "red", "index": 0 }, "1": { "text": "OK", "color": "green", "index": 1 } } }
                 ]
               },
               { "id": "custom.cellOptions", "value": { "type": "color-text" } }
@@ -221,8 +221,8 @@
     },
     {
       "id": 6,
-      "title": "Atraso de replicação por conexão",
-      "description": "Seconds_Behind_Master. A métrica é omitida quando a replicação está parada (o servidor devolve NULL), então uma lacuna no gráfico também é sinal de problema.",
+      "title": "Replication lag by connection",
+      "description": "Seconds_Behind_Master. The metric is omitted when replication is stopped (the server returns NULL), so a gap in the graph is also a sign of trouble.",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -250,7 +250,7 @@
     },
     {
       "id": 7,
-      "title": "Threads de replicação (0 = parada, 1 = rodando)",
+      "title": "Replication threads (0 = stopped, 1 = running)",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -276,8 +276,8 @@
     },
     {
       "id": 8,
-      "title": "Progresso do relay log",
-      "description": "Posição no relay log. Uma linha achatada com atraso crescente indica thread SQL travada.",
+      "title": "Relay log progress",
+      "description": "Position in the relay log. A flat line with growing lag indicates a stuck SQL thread.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -291,8 +291,8 @@
     },
     {
       "id": 9,
-      "title": "Taxa de avanço do relay log",
-      "description": "Derivada da posição: zero enquanto há atraso significa replicação estagnada.",
+      "title": "Relay log advance rate",
+      "description": "Derivative of the position: zero while there's lag means replication is stalled.",
       "type": "timeseries",
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -307,7 +307,7 @@
     },
     {
       "id": 10,
-      "title": "Códigos de erro por conexão",
+      "title": "Error codes by connection",
       "type": "table",
       "gridPos": { "h": 7, "w": 24, "x": 0, "y": 31 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },

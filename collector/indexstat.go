@@ -9,8 +9,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// indexStatQueryTmpl ordena por ROWS_READ DESC antes do limite, mantendo os
-// índices mais usados quando o corte é aplicado.
+// indexStatQueryTmpl orders by ROWS_READ DESC before the limit, keeping the
+// most-used indexes when the cutoff is applied.
 const indexStatQueryTmpl = `
 SELECT TABLE_SCHEMA,
        TABLE_NAME,
@@ -20,8 +20,8 @@ FROM information_schema.INDEX_STATISTICS
 ORDER BY ROWS_READ DESC
 LIMIT %d`
 
-// IndexStatCollector coleta information_schema.INDEX_STATISTICS.
-// Requer `SET GLOBAL userstat = ON`.
+// IndexStatCollector collects information_schema.INDEX_STATISTICS.
+// Requires `SET GLOBAL userstat = ON`.
 type IndexStatCollector struct {
 	base
 	limit int
@@ -30,28 +30,28 @@ type IndexStatCollector struct {
 	unused   *prometheus.Desc
 }
 
-// NewIndexStatCollector cria o coletor indexstat com o limite de índices por
-// scrape.
+// NewIndexStatCollector creates the indexstat collector with the limit of
+// indexes per scrape.
 func NewIndexStatCollector(enabled bool, limit int, logger log.Logger, features FeatureProvider) *IndexStatCollector {
 	labels := []string{"schema", "table", "index"}
 	return &IndexStatCollector{
-		base:  newBase("indexstat", "Estatísticas por índice de information_schema.INDEX_STATISTICS (requer userstat=ON).", enabled, logger, features),
+		base:  newBase("indexstat", "Per-index statistics from information_schema.INDEX_STATISTICS (requires userstat=ON).", enabled, logger, features),
 		limit: limit,
 
-		rowsRead: newDesc("index", "rows_read_total", "Total de linhas lidas através do índice.", labels),
-		unused:   newDesc("index", "unused", "Presente com valor 1 quando o índice não registrou leituras (rows_read = 0).", labels),
+		rowsRead: newDesc("index", "rows_read_total", "Total rows read through the index.", labels),
+		unused:   newDesc("index", "unused", "Present with value 1 when the index recorded no reads (rows_read = 0).", labels),
 	}
 }
 
-// Available implementa Availability: depende da variável userstat.
+// Available implements Availability: depends on the userstat variable.
 func (c *IndexStatCollector) Available() bool {
 	return c.featureFlags().HasUserStat
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 func (c *IndexStatCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	if !c.Available() {
-		c.warned.warn("msg", "userstat está OFF; nenhuma métrica será coletada. Habilite com SET GLOBAL userstat = ON")
+		c.warned.warn("msg", "userstat is OFF; no metrics will be collected. Enable with SET GLOBAL userstat = ON")
 		return nil
 	}
 
@@ -80,8 +80,8 @@ func (c *IndexStatCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- 
 
 		emitCounter(ch, c.rowsRead, rowsRead, s, t, i)
 
-		// mariadb_index_unused é emitida apenas para índices sem leitura, com
-		// valor fixo 1 — funciona como um marcador para alertas de índice morto.
+		// mariadb_index_unused is emitted only for indexes with no reads, with
+		// a fixed value of 1 — it works as a marker for dead-index alerts.
 		if rowsRead.Valid && rowsRead.Float64 == 0 {
 			ch <- prometheus.MustNewConstMetric(
 				c.unused, prometheus.GaugeValue, 1,

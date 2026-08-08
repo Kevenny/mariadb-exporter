@@ -15,15 +15,15 @@ import (
 	"github.com/Kevenny/mariadb-exporter/config"
 )
 
-// slowCollector emite métricas devagar, ampliando a janela em que dois scrapes
-// concorrentes se sobrepõem.
+// slowCollector emits metrics slowly, widening the window in which two
+// concurrent scrapes overlap.
 type slowCollector struct {
 	name string
 	desc *prometheus.Desc
 }
 
 func (s *slowCollector) Name() string  { return s.name }
-func (s *slowCollector) Help() string  { return "coletor lento de teste" }
+func (s *slowCollector) Help() string  { return "slow test collector" }
 func (s *slowCollector) Enabled() bool { return true }
 
 func (s *slowCollector) Collect(_ context.Context, _ *sql.DB, ch chan<- prometheus.Metric) error {
@@ -33,12 +33,13 @@ func (s *slowCollector) Collect(_ context.Context, _ *sql.DB, ch chan<- promethe
 	return nil
 }
 
-// O Prometheus permite scrapes concorrentes (--web.max-requests default 0 =
-// ilimitado), e o Grafana/PMM podem consultar em paralelo. Collect precisa ser
-// seguro para chamadas simultâneas: os gauges internos são compartilhados.
+// Prometheus allows concurrent scrapes (--web.max-requests default 0 =
+// unlimited), and Grafana/PMM can query in parallel. Collect must be safe
+// for simultaneous calls: the internal gauges are shared.
 //
-// Sem o detector de race (indisponível sem cgo neste host), este teste ainda
-// pega pânicos por escrita concorrente em mapa e envio em canal fechado.
+// Without the race detector (unavailable without cgo on this host), this
+// test still catches panics from concurrent map writes and sends on a closed
+// channel.
 func TestExporterConcurrentCollectDoesNotPanic(t *testing.T) {
 	db, mock, err := sqlmock.New(
 		sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp),
@@ -47,7 +48,7 @@ func TestExporterConcurrentCollectDoesNotPanic(t *testing.T) {
 	require.NoError(t, err)
 	defer db.Close()
 
-	// Vários pings, um por scrape concorrente.
+	// Multiple pings, one per concurrent scrape.
 	for i := 0; i < 64; i++ {
 		mock.ExpectPing()
 	}
@@ -71,7 +72,7 @@ func TestExporterConcurrentCollectDoesNotPanic(t *testing.T) {
 				ch := make(chan prometheus.Metric, 4096)
 				done := make(chan struct{})
 
-				// Dreno concorrente: o Collect bloquearia se o canal enchesse.
+				// Concurrent drain: Collect would block if the channel filled up.
 				go func() {
 					defer close(done)
 					for range ch {
@@ -87,16 +88,16 @@ func TestExporterConcurrentCollectDoesNotPanic(t *testing.T) {
 	})
 }
 
-// O FeatureDetector é lido pelos coletores a cada scrape e escrito pelo refresh
-// periódico em outra goroutine. Features()/Version() devem ser seguros sob
-// concorrência com Refresh().
+// The FeatureDetector is read by the collectors on every scrape and written
+// by the periodic refresh in another goroutine. Features()/Version() must be
+// safe under concurrency with Refresh().
 func TestFeatureDetectorConcurrentAccess(t *testing.T) {
 	db, mock, err := sqlmock.New(sqlmock.QueryMatcherOption(sqlmock.QueryMatcherRegexp))
 	require.NoError(t, err)
 	defer db.Close()
 
-	// O refresh vai rodar várias vezes; permite que as queries falhem sem
-	// atrapalhar (o detector loga e segue).
+	// The refresh will run several times; allows the queries to fail
+	// without disrupting things (the detector logs and moves on).
 	mock.MatchExpectationsInOrder(false)
 	for i := 0; i < 200; i++ {
 		mock.ExpectQuery("FROM information_schema.plugins").
@@ -117,7 +118,7 @@ func TestFeatureDetectorConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
 
-	// Escritores: refresh contínuo.
+	// Writers: continuous refresh.
 	for i := 0; i < 4; i++ {
 		wg.Add(1)
 		go func() {
@@ -133,7 +134,7 @@ func TestFeatureDetectorConcurrentAccess(t *testing.T) {
 		}()
 	}
 
-	// Leitores: simulam coletores consultando as features a cada scrape.
+	// Readers: simulate collectors querying the features on every scrape.
 	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
@@ -155,7 +156,7 @@ func TestFeatureDetectorConcurrentAccess(t *testing.T) {
 	}
 
 	require.NotPanics(t, func() {
-		// Deixa rodar um instante e para.
+		// Lets it run for a moment and then stops.
 		for i := 0; i < 2000; i++ {
 			_ = d.Features()
 		}
@@ -164,8 +165,8 @@ func TestFeatureDetectorConcurrentAccess(t *testing.T) {
 	})
 }
 
-// Features() devolve uma cópia: mutações feitas pelo chamador não devem afetar o
-// estado interno do detector nem outros coletores.
+// Features() returns a copy: mutations made by the caller must not affect
+// the detector's internal state or other collectors.
 func TestFeatureDetectorFeaturesReturnsCopy(t *testing.T) {
 	db, _, err := sqlmock.New()
 	require.NoError(t, err)
@@ -179,6 +180,6 @@ func TestFeatureDetectorFeaturesReturnsCopy(t *testing.T) {
 
 	second := d.Features()
 	require.False(t, second.HasUserStat,
-		"mutação na cópia devolvida por Features() afetou o estado interno")
+		"mutation on the copy returned by Features() affected the internal state")
 	require.False(t, second.HasGalera)
 }

@@ -1,18 +1,18 @@
-# Exemplo de custom metrics para o mariadb_exporter.
+# Custom metrics example for mariadb_exporter.
 #
-# Uso:
+# Usage:
 #   mariadb_exporter --custom-metrics=/etc/mariadb_exporter/example.yml
 #
-# Vários arquivos podem ser combinados repetindo a flag:
+# Multiple files can be combined by repeating the flag:
 #   --custom-metrics=a.yml --custom-metrics=b.yml
 #
-# Regras:
-#   - A chave do bloco é o nome da métrica exposta.
-#   - `query` é o SQL executado a cada scrape (mantenha-o barato).
-#   - Cada coluna do result set precisa estar declarada em `metrics` com um
-#     `usage`: LABEL, COUNTER ou GAUGE.
-#   - Com mais de uma coluna de valor, o nome da coluna é sufixado ao nome da
-#     métrica (ex: mariadb_custom_io_reads, mariadb_custom_io_writes).
+# Rules:
+#   - The block key is the exposed metric name.
+#   - `query` is the SQL executed on every scrape (keep it cheap).
+#   - Every column in the result set must be declared in `metrics` with a
+#     `usage`: LABEL, COUNTER or GAUGE.
+#   - With more than one value column, the column name is suffixed to the
+#     metric name (e.g. mariadb_custom_io_reads, mariadb_custom_io_writes).
 
 mariadb_active_sessions_by_schema:
   query: |
@@ -25,15 +25,15 @@ mariadb_active_sessions_by_schema:
   metrics:
     - schema_name:
         usage: "LABEL"
-        description: "Schema do banco"
+        description: "Database schema"
     - command:
         usage: "LABEL"
-        description: "Tipo de comando"
+        description: "Command type"
     - total:
         usage: "GAUGE"
-        description: "Total de sessoes ativas por schema e comando"
+        description: "Total active sessions by schema and command"
 
-# Tamanho de dados e índices por schema — útil para acompanhar crescimento.
+# Data and index size by schema — useful for tracking growth.
 mariadb_schema_size_bytes:
   query: |
     SELECT table_schema AS schema_name,
@@ -45,16 +45,16 @@ mariadb_schema_size_bytes:
   metrics:
     - schema_name:
         usage: "LABEL"
-        description: "Schema do banco"
+        description: "Database schema"
     - data_bytes:
         usage: "GAUGE"
-        description: "Bytes ocupados por dados no schema"
+        description: "Bytes occupied by data in the schema"
     - index_bytes:
         usage: "GAUGE"
-        description: "Bytes ocupados por indices no schema"
+        description: "Bytes occupied by indexes in the schema"
 
-# Transações mais antigas em execução: detecta transações longas que seguram
-# undo log e metadata locks.
+# Oldest running transaction: detects long transactions holding onto undo log
+# and metadata locks.
 mariadb_longest_transaction_seconds:
   query: |
     SELECT COALESCE(MAX(TIMESTAMPDIFF(SECOND, trx_started, NOW())), 0) AS seconds
@@ -62,22 +62,22 @@ mariadb_longest_transaction_seconds:
   metrics:
     - seconds:
         usage: "GAUGE"
-        description: "Duracao da transacao ativa mais antiga em segundos"
+        description: "Duration of the oldest active transaction in seconds"
 
-# Índices realmente órfãos (nunca lidos desde o último restart).
+# Indexes that are truly orphaned (never read since the last restart).
 #
-# A métrica nativa mariadb_index_unused depende de o índice aparecer em
-# INDEX_STATISTICS com ROWS_READ = 0 — mas o MariaDB só insere ali os índices
-# que já foram lidos ao menos uma vez. Um índice jamais tocado simplesmente não
-# existe naquela tabela, então nunca é detectado.
+# The native mariadb_index_unused metric depends on the index showing up in
+# INDEX_STATISTICS with ROWS_READ = 0 — but MariaDB only inserts into that
+# table indexes that have already been read at least once. An index that was
+# never touched simply doesn't exist in that table, so it's never detected.
 #
-# Este LEFT JOIN resolve isso comparando os índices declarados (STATISTICS) com
-# os que registraram leitura (INDEX_STATISTICS). O resultado é a contagem por
-# schema; use o dashboard "Tabelas & Índices" para o detalhe.
+# This LEFT JOIN solves that by comparing declared indexes (STATISTICS)
+# against the ones that recorded a read (INDEX_STATISTICS). The result is the
+# count per schema; use the "Tables & Indexes" dashboard for the detail.
 #
-# Atenção: só confie no resultado se o uptime do servidor cobrir um ciclo
-# completo de negócio — um índice usado apenas no fechamento mensal parece
-# órfão se o servidor reiniciou ontem.
+# Careful: only trust the result if the server's uptime covers a full business
+# cycle — an index used only during month-end closing looks orphaned if the
+# server restarted yesterday.
 mariadb_orphan_indexes:
   query: |
     SELECT s.TABLE_SCHEMA AS schema_name,
@@ -94,7 +94,7 @@ mariadb_orphan_indexes:
   metrics:
     - schema_name:
         usage: "LABEL"
-        description: "Schema do banco"
+        description: "Database schema"
     - total:
         usage: "GAUGE"
-        description: "Indices declarados que nunca registraram leitura"
+        description: "Declared indexes that never recorded a read"

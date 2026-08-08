@@ -8,12 +8,12 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// userStatQuery lê information_schema.USER_STATISTICS.
+// userStatQuery reads information_schema.USER_STATISTICS.
 //
-// A tabela não tem uma coluna ROWS_CHANGED: o MariaDB a decompõe em
-// ROWS_DELETED, ROWS_INSERTED e ROWS_UPDATED (diferente de TABLE_STATISTICS, que
-// tem ROWS_CHANGED). A soma das três reproduz a semântica de "linhas alteradas"
-// pedida pela especificação.
+// The table has no ROWS_CHANGED column: MariaDB breaks it down into
+// ROWS_DELETED, ROWS_INSERTED and ROWS_UPDATED (unlike TABLE_STATISTICS, which
+// has ROWS_CHANGED). The sum of the three reproduces the "rows changed"
+// semantics requested by the specification.
 const userStatQuery = `
 SELECT USER,
        TOTAL_CONNECTIONS,
@@ -28,8 +28,8 @@ SELECT USER,
        LOST_CONNECTIONS
 FROM information_schema.USER_STATISTICS`
 
-// UserStatCollector coleta information_schema.USER_STATISTICS.
-// Requer `SET GLOBAL userstat = ON`.
+// UserStatCollector collects information_schema.USER_STATISTICS.
+// Requires `SET GLOBAL userstat = ON`.
 type UserStatCollector struct {
 	base
 
@@ -45,34 +45,34 @@ type UserStatCollector struct {
 	lostConnections       *prometheus.Desc
 }
 
-// NewUserStatCollector cria o coletor userstat.
+// NewUserStatCollector creates the userstat collector.
 func NewUserStatCollector(enabled bool, logger log.Logger, features FeatureProvider) *UserStatCollector {
 	labels := []string{"user"}
 	return &UserStatCollector{
-		base: newBase("userstat", "Estatísticas por usuário de information_schema.USER_STATISTICS (requer userstat=ON).", enabled, logger, features),
+		base: newBase("userstat", "Per-user statistics from information_schema.USER_STATISTICS (requires userstat=ON).", enabled, logger, features),
 
-		totalConnections:      newDesc("user", "total_connections_total", "Total de conexões feitas pelo usuário.", labels),
-		concurrentConnections: newDesc("user", "concurrent_connections", "Conexões simultâneas atuais do usuário.", labels),
-		rowsRead:              newDesc("user", "rows_read_total", "Total de linhas lidas pelo usuário.", labels),
-		rowsSent:              newDesc("user", "rows_sent_total", "Total de linhas enviadas ao usuário.", labels),
-		rowsChanged:           newDesc("user", "rows_changed_total", "Total de linhas alteradas pelo usuário.", labels),
-		selectCommands:        newDesc("user", "select_commands_total", "Total de comandos SELECT executados pelo usuário.", labels),
-		updateCommands:        newDesc("user", "update_commands_total", "Total de comandos UPDATE executados pelo usuário.", labels),
-		otherCommands:         newDesc("user", "other_commands_total", "Total de outros comandos executados pelo usuário.", labels),
-		accessDenied:          newDesc("user", "access_denied_total", "Total de acessos negados ao usuário.", labels),
-		lostConnections:       newDesc("user", "lost_connections_total", "Total de conexões perdidas do usuário.", labels),
+		totalConnections:      newDesc("user", "total_connections_total", "Total connections made by the user.", labels),
+		concurrentConnections: newDesc("user", "concurrent_connections", "Current concurrent connections for the user.", labels),
+		rowsRead:              newDesc("user", "rows_read_total", "Total rows read by the user.", labels),
+		rowsSent:              newDesc("user", "rows_sent_total", "Total rows sent to the user.", labels),
+		rowsChanged:           newDesc("user", "rows_changed_total", "Total rows changed by the user.", labels),
+		selectCommands:        newDesc("user", "select_commands_total", "Total SELECT commands executed by the user.", labels),
+		updateCommands:        newDesc("user", "update_commands_total", "Total UPDATE commands executed by the user.", labels),
+		otherCommands:         newDesc("user", "other_commands_total", "Total other commands executed by the user.", labels),
+		accessDenied:          newDesc("user", "access_denied_total", "Total access denied errors for the user.", labels),
+		lostConnections:       newDesc("user", "lost_connections_total", "Total lost connections for the user.", labels),
 	}
 }
 
-// Available implementa Availability: depende da variável userstat.
+// Available implements Availability: depends on the userstat variable.
 func (c *UserStatCollector) Available() bool {
 	return c.featureFlags().HasUserStat
 }
 
-// Collect implementa Collector.
+// Collect implements Collector.
 func (c *UserStatCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
 	if !c.Available() {
-		c.warned.warn("msg", "userstat está OFF; nenhuma métrica será coletada. Habilite com SET GLOBAL userstat = ON")
+		c.warned.warn("msg", "userstat is OFF; no metrics will be collected. Enable with SET GLOBAL userstat = ON")
 		return nil
 	}
 
@@ -117,11 +117,13 @@ func (c *UserStatCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- p
 	return rows.Err()
 }
 
-// emitCounter envia um counter apenas se o valor não for NULL. Valores NULL são
-// omitidos em vez de virarem zero, para não inventar dado que o servidor não deu.
+// emitCounter sends a counter only if the value is not NULL. NULL values are
+// omitted instead of becoming zero, to avoid inventing data the server did
+// not provide.
 //
-// Os labels passam por sanitizeLabels: valores vindos do banco podem não ser
-// UTF-8 válido e fariam o client_golang entrar em pânico, derrubando o exporter.
+// The labels go through sanitizeLabels: values coming from the database might
+// not be valid UTF-8 and would make client_golang panic, bringing down the
+// exporter.
 func emitCounter(ch chan<- prometheus.Metric, desc *prometheus.Desc, v sql.NullFloat64, labels ...string) {
 	if !v.Valid {
 		return
@@ -129,7 +131,7 @@ func emitCounter(ch chan<- prometheus.Metric, desc *prometheus.Desc, v sql.NullF
 	ch <- prometheus.MustNewConstMetric(desc, prometheus.CounterValue, v.Float64, sanitizeLabels(labels)...)
 }
 
-// emitGauge envia um gauge apenas se o valor não for NULL.
+// emitGauge sends a gauge only if the value is not NULL.
 func emitGauge(ch chan<- prometheus.Metric, desc *prometheus.Desc, v sql.NullFloat64, labels ...string) {
 	if !v.Valid {
 		return

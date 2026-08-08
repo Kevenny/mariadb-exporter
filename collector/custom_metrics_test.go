@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// writeTempYAML grava um YAML temporário e devolve seu caminho.
+// writeTempYAML writes a temporary YAML file and returns its path.
 func writeTempYAML(t *testing.T, content string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "custom.yml")
@@ -17,7 +17,7 @@ func writeTempYAML(t *testing.T, content string) string {
 	return path
 }
 
-// Este YAML é o exemplo da seção 10 da especificação.
+// This YAML is the example from section 10 of the specification.
 const exampleYAML = `
 mariadb_active_sessions_by_schema:
   query: |
@@ -71,8 +71,8 @@ func TestCustomMetricsCollector(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Com mais de uma coluna de valor, o nome da coluna é sufixado para evitar
-// colisão de nomes de métrica.
+// With more than one value column, the column name is suffixed to avoid
+// metric name collisions.
 func TestCustomMetricsCollectorMultipleValueColumns(t *testing.T) {
 	path := writeTempYAML(t, `
 mariadb_custom_io:
@@ -132,7 +132,7 @@ metrica_sem_query:
 	require.Contains(t, err.Error(), "query")
 }
 
-// Sem nenhuma coluna de valor a métrica não faz sentido.
+// Without any value column, the metric makes no sense.
 func TestCustomMetricsCollectorOnlyLabels(t *testing.T) {
 	path := writeTempYAML(t, `
 so_labels:
@@ -144,7 +144,7 @@ so_labels:
 
 	_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "COUNTER ou GAUGE")
+	require.Contains(t, err.Error(), "COUNTER or GAUGE")
 }
 
 func TestCustomMetricsCollectorFileNotFound(t *testing.T) {
@@ -152,8 +152,8 @@ func TestCustomMetricsCollectorFileNotFound(t *testing.T) {
 	require.Error(t, err)
 }
 
-// Uma coluna declarada no YAML que não existe no result set deve gerar erro
-// claro em vez de pânico por índice inválido.
+// A column declared in the YAML that does not exist in the result set should
+// generate a clear error instead of a panic from an invalid index.
 func TestCustomMetricsCollectorColumnMismatch(t *testing.T) {
 	path := writeTempYAML(t, `
 mariadb_col_errada:
@@ -171,18 +171,18 @@ mariadb_col_errada:
 
 	metrics, err := runCollect(t, c, db)
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "não existe no result set")
+	require.Contains(t, err.Error(), "does not exist in the query's result set")
 	require.Empty(t, metrics)
 }
 
-// Sem arquivos, o coletor fica desabilitado.
+// Without files, the collector is disabled.
 func TestCustomMetricsCollectorDisabledWithoutFiles(t *testing.T) {
 	c, err := NewCustomMetricsCollector(nil, testLogger(), allFeatures(), nil)
 	require.NoError(t, err)
 	require.False(t, c.Enabled())
 }
 
-// Múltiplos arquivos são combinados (--custom-metrics=a.yml --custom-metrics=b.yml).
+// Multiple files are combined (--custom-metrics=a.yml --custom-metrics=b.yml).
 func TestCustomMetricsCollectorMultipleFiles(t *testing.T) {
 	dir := t.TempDir()
 

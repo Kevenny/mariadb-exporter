@@ -6,13 +6,13 @@
   "refresh": "30s",
   "tags": ["mariadb", "galera", "cluster"],
   "time": { "from": "now-1h", "to": "now" },
-  "description": "Requer o coletor galera habilitado (--collector.galera, opt-in) e wsrep ativo na instância.",
+  "description": "Requires the galera collector enabled (--collector.galera, opt-in) and wsrep active on the instance.",
   "templating": {
     "list": [
       { "name": "datasource", "type": "datasource", "query": "prometheus" },
       {
         "name": "cluster_name",
-        "label": "Cluster Galera",
+        "label": "Galera cluster",
         "type": "query",
         "datasource": { "type": "prometheus", "uid": "${datasource}" },
         "query": "label_values(mariadb_galera_cluster_size, cluster_name)",
@@ -34,8 +34,8 @@
   "panels": [
     {
       "id": 1,
-      "title": "Coletor galera disponível?",
-      "description": "0 significa que o wsrep não está ativo nesta instância ou que --collector.galera não foi habilitado (o coletor é opt-in).",
+      "title": "Galera collector available?",
+      "description": "0 means wsrep is not active on this instance, or --collector.galera was not enabled (the collector is opt-in).",
       "type": "stat",
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -52,7 +52,7 @@
             {
               "type": "value",
               "options": {
-                "0": { "text": "INDISPONÍVEL", "color": "text", "index": 0 },
+                "0": { "text": "UNAVAILABLE", "color": "text", "index": 0 },
                 "1": { "text": "OK", "color": "green", "index": 1 }
               }
             }
@@ -62,8 +62,8 @@
     },
     {
       "id": 2,
-      "title": "Tamanho do cluster",
-      "description": "Número de nós que formam o componente atual. Uma queda indica nó saindo ou partição de rede.",
+      "title": "Cluster size",
+      "description": "Number of nodes that make up the current component. A drop indicates a node leaving or a network partition.",
       "type": "stat",
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -89,8 +89,8 @@
     },
     {
       "id": 3,
-      "title": "Status do componente",
-      "description": "Primary = o componente tem quórum e aceita escritas. non-Primary = perdeu quórum (split-brain evitado) e rejeita escritas.",
+      "title": "Component status",
+      "description": "Primary = the component has quorum and accepts writes. non-Primary = lost quorum (split-brain avoided) and rejects writes.",
       "type": "stat",
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -117,8 +117,8 @@
     },
     {
       "id": 4,
-      "title": "Nós não sincronizados",
-      "description": "Nós cujo estado local não é 'synced' (3). Durante um SST isso é esperado e temporário.",
+      "title": "Unsynced nodes",
+      "description": "Nodes whose local state isn't 'synced' (3). During an SST this is expected and temporary.",
       "type": "stat",
       "gridPos": { "h": 5, "w": 6, "x": 18, "y": 0 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -139,8 +139,8 @@
     },
     {
       "id": 5,
-      "title": "Estado local do nó",
-      "description": "0=joining, 1=donor/desynced, 2=joined, 3=synced. Apenas 'synced' participa plenamente da replicação.",
+      "title": "Node local state",
+      "description": "0=joining, 1=donor/desynced, 2=joined, 3=synced. Only 'synced' fully participates in replication.",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -172,8 +172,8 @@
     },
     {
       "id": 6,
-      "title": "Tamanho do cluster ao longo do tempo",
-      "description": "Mudanças aqui são eventos de membership: nó entrando, saindo ou partição de rede.",
+      "title": "Cluster size over time",
+      "description": "Changes here are membership events: a node joining, leaving, or a network partition.",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 5 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -190,8 +190,8 @@
     },
     {
       "id": 7,
-      "title": "Flow control — fração do tempo pausado",
-      "description": "Quando um nó não acompanha o ritmo, o Galera pausa a replicação do cluster inteiro. Valor sustentado acima de 0 indica nó lento limitando todos.",
+      "title": "Flow control — fraction of time paused",
+      "description": "When a node can't keep up, Galera pauses replication for the whole cluster. A sustained value above 0 indicates a slow node throttling everyone.",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 0, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -219,8 +219,8 @@
     },
     {
       "id": 8,
-      "title": "Filas de replicação (média)",
-      "description": "recv_queue alto = o nó recebe mais do que consegue aplicar (nó lento). send_queue alto = gargalo de rede ou nós lentos a jusante.",
+      "title": "Replication queues (average)",
+      "description": "High recv_queue = the node receives more than it can apply (slow node). High send_queue = network bottleneck or slow downstream nodes.",
       "type": "timeseries",
       "gridPos": { "h": 9, "w": 12, "x": 12, "y": 14 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -240,7 +240,7 @@
     },
     {
       "id": 9,
-      "title": "Visão consolidada por nó",
+      "title": "Consolidated view by node",
       "type": "table",
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "${datasource}" },
@@ -277,10 +277,10 @@
           "options": {
             "excludeByName": { "Time": true, "__name__": true, "job": true, "instance": true },
             "renameByName": {
-              "Value #SIZE": "Nós no cluster",
-              "Value #STATUS": "Componente",
-              "Value #STATE": "Estado local",
-              "Value #FC": "Flow control pausado"
+              "Value #SIZE": "Nodes in cluster",
+              "Value #STATUS": "Component",
+              "Value #STATE": "Local state",
+              "Value #FC": "Flow control paused"
             }
           }
         }
@@ -289,7 +289,7 @@
         "defaults": {},
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Componente" },
+            "matcher": { "id": "byName", "options": "Component" },
             "properties": [
               {
                 "id": "mappings",
@@ -301,7 +301,7 @@
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "Estado local" },
+            "matcher": { "id": "byName", "options": "Local state" },
             "properties": [
               {
                 "id": "mappings",

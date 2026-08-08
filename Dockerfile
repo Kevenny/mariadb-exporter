@@ -5,8 +5,8 @@ ARG BUILD_DATE=unknown
 
 WORKDIR /build
 
-# As dependências são baixadas em uma camada própria para aproveitar o cache
-# quando apenas o código-fonte muda.
+# Dependencies are downloaded in their own layer to take advantage of caching
+# when only the source code changes.
 COPY go.mod go.sum ./
 RUN go mod download
 
@@ -19,7 +19,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build \
 FROM scratch
 
 COPY --from=builder /build/mariadb_exporter /mariadb_exporter
-# Certificados de CA para conexões TLS ao MariaDB.
+# CA certificates for TLS connections to MariaDB.
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
 
 EXPOSE 9104

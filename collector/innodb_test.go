@@ -36,18 +36,18 @@ func TestInnoDBCollector(t *testing.T) {
 	require.Equal(t, float64(35), requireMetric(t, snaps, "mariadb_innodb_row_lock_time_avg_milliseconds", nil).Value)
 	require.Equal(t, float64(4), requireMetric(t, snaps, "mariadb_innodb_deadlocks_total", nil).Value)
 
-	// Páginas do buffer pool são diferenciadas pelo label type.
+	// Buffer pool pages are differentiated by the type label.
 	require.Equal(t, float64(5000), requireMetric(t, snaps, "mariadb_innodb_buffer_pool_pages_total", map[string]string{"type": "free"}).Value)
 	require.Equal(t, float64(60000), requireMetric(t, snaps, "mariadb_innodb_buffer_pool_pages_total", map[string]string{"type": "data"}).Value)
 	require.Equal(t, float64(250), requireMetric(t, snaps, "mariadb_innodb_buffer_pool_pages_total", map[string]string{"type": "dirty"}).Value)
 
-	// Innodb_pages_written não está mapeada e deve ser ignorada.
+	// Innodb_pages_written is not mapped and should be ignored.
 	require.Len(t, snaps, 8)
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Sem Innodb_deadlocks no SHOW STATUS, o coletor recorre ao texto de
-// SHOW ENGINE INNODB STATUS.
+// Without Innodb_deadlocks in SHOW STATUS, the collector falls back to the
+// SHOW ENGINE INNODB STATUS text.
 func TestInnoDBCollectorDeadlockFallback(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -69,8 +69,8 @@ func TestInnoDBCollectorDeadlockFallback(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// Se o fallback também não tiver a informação, nenhuma métrica de deadlock é
-// emitida e o scrape continua sem erro.
+// If the fallback also lacks the information, no deadlock metric is emitted
+// and the scrape continues without error.
 func TestInnoDBCollectorDeadlockUnavailable(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -111,9 +111,9 @@ func TestGaleraCollector(t *testing.T) {
 	cluster := map[string]string{"cluster_name": "prod-cluster"}
 
 	require.Equal(t, float64(3), requireMetric(t, snaps, "mariadb_galera_cluster_size", cluster).Value)
-	require.Equal(t, float64(1), requireMetric(t, snaps, "mariadb_galera_cluster_status", cluster).Value, "Primary deve virar 1")
+	require.Equal(t, float64(1), requireMetric(t, snaps, "mariadb_galera_cluster_status", cluster).Value, "Primary should become 1")
 
-	// wsrep_local_state nativo 4 (synced) mapeia para 3 na escala da especificação.
+	// Native wsrep_local_state 4 (synced) maps to 3 in the specification's scale.
 	require.Equal(t, float64(3), requireMetric(t, snaps, "mariadb_galera_local_state", cluster).Value)
 
 	require.InDelta(t, 0.015, requireMetric(t, snaps, "mariadb_galera_flow_control_paused", cluster).Value, 0.0001)
@@ -141,10 +141,10 @@ func TestGaleraCollectorNonPrimary(t *testing.T) {
 	cluster := map[string]string{"cluster_name": "prod-cluster"}
 
 	require.Equal(t, float64(0), requireMetric(t, snaps, "mariadb_galera_cluster_status", cluster).Value)
-	require.Equal(t, float64(0), requireMetric(t, snaps, "mariadb_galera_local_state", cluster).Value, "state nativo 1 (joining) vira 0")
+	require.Equal(t, float64(0), requireMetric(t, snaps, "mariadb_galera_local_state", cluster).Value, "native state 1 (joining) becomes 0")
 }
 
-// Galera inativo: zero métricas, sem erro.
+// Galera inactive: zero metrics, no error.
 func TestGaleraCollectorInactive(t *testing.T) {
 	db, mock := newMockDB(t)
 
@@ -157,7 +157,7 @@ func TestGaleraCollectorInactive(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
-// O coletor galera é opt-in: desabilitado por padrão.
+// The galera collector is opt-in: disabled by default.
 func TestGaleraCollectorIsOptIn(t *testing.T) {
 	c := NewGaleraCollector(false, testLogger(), allFeatures())
 	require.False(t, c.Enabled())

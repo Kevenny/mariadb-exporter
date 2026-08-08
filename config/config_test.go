@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// O prefixo mariadb:// é semântico e precisa ser removido antes de chegar ao
-// driver, que fala o protocolo MySQL (seção 7).
+// The mariadb:// prefix is semantic and needs to be removed before reaching
+// the driver, which speaks the MySQL protocol (section 7).
 func TestNormalizeDSN(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -19,47 +19,47 @@ func TestNormalizeDSN(t *testing.T) {
 		want  string
 	}{
 		{
-			name:  "prefixo mariadb é removido",
+			name:  "mariadb prefix is removed",
 			input: "mariadb://pmm:senha@tcp(localhost:3306)/",
 			want:  "pmm:senha@tcp(localhost:3306)/",
 		},
 		{
-			name:  "prefixo mysql é removido",
+			name:  "mysql prefix is removed",
 			input: "mysql://pmm:senha@tcp(localhost:3306)/",
 			want:  "pmm:senha@tcp(localhost:3306)/",
 		},
 		{
-			name:  "DSN nativo passa inalterado",
+			name:  "native DSN passes through unchanged",
 			input: "pmm:senha@tcp(localhost:3306)/",
 			want:  "pmm:senha@tcp(localhost:3306)/",
 		},
 		{
-			name:  "IP e porta",
+			name:  "IP and port",
 			input: "mariadb://pmm:senha@tcp(192.168.1.10:3306)/",
 			want:  "pmm:senha@tcp(192.168.1.10:3306)/",
 		},
 		{
-			name:  "socket unix",
+			name:  "unix socket",
 			input: "mariadb://pmm:senha@unix(/var/run/mysql/mysql.sock)/",
 			want:  "pmm:senha@unix(/var/run/mysql/mysql.sock)/",
 		},
 		{
-			name:  "com parâmetros de query",
+			name:  "with query parameters",
 			input: "mariadb://pmm:senha@tcp(localhost:3306)/?timeout=30s&readTimeout=30s",
 			want:  "pmm:senha@tcp(localhost:3306)/?timeout=30s&readTimeout=30s",
 		},
 		{
-			name:  "sem credenciais lê ~/.my.cnf",
+			name:  "without credentials reads ~/.my.cnf",
 			input: "mariadb://@tcp(localhost:3306)/?readTimeout=30s",
 			want:  "@tcp(localhost:3306)/?readTimeout=30s",
 		},
 		{
-			name:  "barra final é adicionada quando ausente",
+			name:  "trailing slash is added when missing",
 			input: "mariadb://pmm:senha@tcp(localhost:3306)",
 			want:  "pmm:senha@tcp(localhost:3306)/",
 		},
 		{
-			name:  "prefixo em maiúsculas também é removido",
+			name:  "uppercase prefix is also removed",
 			input: "MariaDB://pmm:senha@tcp(localhost:3306)/",
 			want:  "pmm:senha@tcp(localhost:3306)/",
 		},
@@ -79,7 +79,7 @@ func TestNormalizeDSNEmpty(t *testing.T) {
 	require.Error(t, err)
 }
 
-// A senha nunca deve aparecer nos logs.
+// The password must never appear in logs.
 func TestRedactDSN(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -87,17 +87,17 @@ func TestRedactDSN(t *testing.T) {
 		want  string
 	}{
 		{
-			name:  "senha é mascarada",
+			name:  "password is masked",
 			input: "mariadb://pmm:senha_secreta@tcp(localhost:3306)/",
 			want:  "mariadb://pmm:***@tcp(localhost:3306)/",
 		},
 		{
-			name:  "sem senha permanece igual",
+			name:  "without password stays the same",
 			input: "mariadb://@tcp(localhost:3306)/",
 			want:  "mariadb://@tcp(localhost:3306)/",
 		},
 		{
-			name:  "sem credenciais não mascara a porta",
+			name:  "without credentials does not mask the port",
 			input: "tcp(localhost:3306)/",
 			want:  "tcp(localhost:3306)/",
 		},
@@ -112,20 +112,20 @@ func TestRedactDSN(t *testing.T) {
 }
 
 func TestValidate(t *testing.T) {
-	t.Run("DSN ausente é erro", func(t *testing.T) {
+	t.Run("missing DSN is an error", func(t *testing.T) {
 		cfg := &Config{}
 		err := cfg.Validate()
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "MARIADB_DSN")
 	})
 
-	t.Run("DSN válido passa", func(t *testing.T) {
+	t.Run("valid DSN passes", func(t *testing.T) {
 		cfg := &Config{}
 		cfg.DataSource.Name = "mariadb://pmm:senha@tcp(localhost:3306)/"
 		require.NoError(t, cfg.Validate())
 	})
 
-	t.Run("limite negativo é erro", func(t *testing.T) {
+	t.Run("negative limit is an error", func(t *testing.T) {
 		cfg := &Config{}
 		cfg.DataSource.Name = "mariadb://pmm:senha@tcp(localhost:3306)/"
 		cfg.Collectors.TableStatLimit = -1
@@ -133,7 +133,7 @@ func TestValidate(t *testing.T) {
 	})
 }
 
-// Os defaults precisam bater com a seção 6 da especificação.
+// The defaults need to match section 6 of the specification.
 func TestRegisterDefaults(t *testing.T) {
 	app := kingpin.New("teste", "")
 	cfg := Register(app)
@@ -142,7 +142,7 @@ func TestRegisterDefaults(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, []string{":9104"}, cfg.Web.ListenAddresses())
-	require.Empty(t, cfg.Web.WebConfigFile(), "sem --web.config.file, o padrão é HTTP simples")
+	require.Empty(t, cfg.Web.WebConfigFile(), "without --web.config.file, the default is plain HTTP")
 	require.Equal(t, "/metrics", cfg.Web.TelemetryPath)
 	require.Equal(t, 0, cfg.Web.MaxRequests)
 
@@ -164,15 +164,15 @@ func TestRegisterDefaults(t *testing.T) {
 	require.True(t, cfg.Collectors.GlobalStatus)
 	require.True(t, cfg.Collectors.GlobalVariables)
 
-	// galera é opt-in.
+	// galera is opt-in.
 	require.False(t, cfg.Collectors.Galera)
 
 	require.Equal(t, "info", cfg.Log.Level)
 	require.Equal(t, "text", cfg.Log.Format)
 
-	// --pmm.service-name tem default derivado do hostname (nunca vazio) e
-	// --pmm.environment tem default "production"; cluster e replication-set
-	// ficam vazios até serem explicitamente configurados.
+	// --pmm.service-name has a default derived from the hostname (never
+	// empty), and --pmm.environment has the default "production"; cluster
+	// and replication-set stay empty until explicitly configured.
 	require.NotEmpty(t, cfg.PMM.ServiceName)
 	require.Equal(t, "production", cfg.PMM.Environment)
 	require.Empty(t, cfg.PMM.Cluster)
@@ -205,7 +205,7 @@ func TestRegisterFlagOverrides(t *testing.T) {
 	require.Equal(t, []string{"a.yml", "b.yml"}, cfg.CustomMetrics)
 }
 
-// O exporter-toolkit permite escutar em vários endereços, repetindo a flag.
+// The exporter-toolkit allows listening on multiple addresses by repeating the flag.
 func TestRegisterMultipleListenAddresses(t *testing.T) {
 	app := kingpin.New("teste", "")
 	cfg := Register(app)
@@ -220,7 +220,7 @@ func TestRegisterMultipleListenAddresses(t *testing.T) {
 	require.Equal(t, []string{"127.0.0.1:9104", "[::1]:9104"}, cfg.Web.ListenAddresses())
 }
 
-// --web.config.file é o arquivo que habilita TLS e/ou basic auth.
+// --web.config.file is the file that enables TLS and/or basic auth.
 func TestRegisterWebConfigFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "web-config.yml")
 	require.NoError(t, os.WriteFile(path, []byte("basic_auth_users: {}\n"), 0o600))
@@ -235,11 +235,11 @@ func TestRegisterWebConfigFile(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, path, cfg.Web.WebConfigFile())
-	require.NoError(t, cfg.Validate(), "arquivo existente deve passar a validação")
+	require.NoError(t, cfg.Validate(), "existing file should pass validation")
 }
 
-// Um --web.config.file inexistente precisa falhar no startup: subir sem o TLS
-// que o operador pediu daria uma falsa sensação de proteção.
+// A missing --web.config.file must fail at startup: coming up without the
+// TLS the operator asked for would give a false sense of protection.
 func TestValidateRejectsMissingWebConfigFile(t *testing.T) {
 	app := kingpin.New("teste", "")
 	cfg := Register(app)
@@ -251,13 +251,14 @@ func TestValidateRejectsMissingWebConfigFile(t *testing.T) {
 	require.NoError(t, err)
 
 	err = cfg.Validate()
-	require.Error(t, err, "arquivo de config web inexistente deveria abortar o startup")
+	require.Error(t, err, "a missing web config file should abort startup")
 	require.Contains(t, err.Error(), "web.config.file")
 }
 
-// O conteúdo do --web.config.file também é validado no startup — antes de abrir
-// o listener. Sem isso, um hash bcrypt inválido só estouraria no primeiro
-// request, com o exporter já escutando sem proteção nesse intervalo.
+// The content of --web.config.file is also validated at startup — before
+// opening the listener. Without this, an invalid bcrypt hash would only blow
+// up on the first request, with the exporter already listening unprotected
+// during that window.
 func TestValidateRejectsMalformedWebConfigFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "web-config.yml")
 	require.NoError(t, os.WriteFile(path,
@@ -273,12 +274,12 @@ func TestValidateRejectsMalformedWebConfigFile(t *testing.T) {
 	require.NoError(t, err)
 
 	err = cfg.Validate()
-	require.Error(t, err, "hash bcrypt inválido deveria abortar o startup")
-	require.Contains(t, err.Error(), "inválido")
+	require.Error(t, err, "invalid bcrypt hash should abort startup")
+	require.Contains(t, err.Error(), "invalid")
 }
 
-// Um web-config.yml apontando para certificado inexistente deve falhar no
-// startup, não ao aceitar a primeira conexão TLS.
+// A web-config.yml pointing to a missing certificate should fail at
+// startup, not when accepting the first TLS connection.
 func TestValidateRejectsWebConfigWithMissingCert(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "web-config.yml")
@@ -297,11 +298,11 @@ func TestValidateRejectsWebConfigWithMissingCert(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	require.Error(t, cfg.Validate(), "certificado inexistente deveria abortar o startup")
+	require.Error(t, cfg.Validate(), "missing certificate should abort startup")
 }
 
-// As flags --pmm.* alimentam config.PMM, usado para ConstLabels de integração
-// com o PMM (mariadb_exporter_pmm_integration.md, seção 3).
+// The --pmm.* flags feed config.PMM, used for PMM integration ConstLabels
+// (mariadb_exporter_pmm_integration.md, section 3).
 func TestRegisterPMMFlags(t *testing.T) {
 	app := kingpin.New("teste", "")
 	cfg := Register(app)
@@ -321,8 +322,8 @@ func TestRegisterPMMFlags(t *testing.T) {
 	require.Equal(t, "mariadb-11-4-primary", cfg.PMM.ReplicationSet)
 }
 
-// As flags --pmm.* também aceitam variáveis de ambiente, no mesmo padrão das
-// demais flags do exporter.
+// The --pmm.* flags also accept environment variables, following the same
+// pattern as the exporter's other flags.
 func TestRegisterPMMFlagsFromEnv(t *testing.T) {
 	t.Setenv("MARIADB_PMM_SERVICE_NAME", "mariadb-env-host")
 	t.Setenv("MARIADB_PMM_CLUSTER", "env-cluster")
@@ -341,10 +342,10 @@ func TestRegisterPMMFlagsFromEnv(t *testing.T) {
 	require.Equal(t, "env-repl-set", cfg.PMM.ReplicationSet)
 }
 
-// PMM.ConstLabels() só inclui os campos preenchidos, para não poluir séries em
-// instalações que não usam PMM.
+// PMM.ConstLabels() only includes the populated fields, so as not to pollute
+// series in installations that don't use PMM.
 func TestPMMConstLabels(t *testing.T) {
-	t.Run("todos os campos", func(t *testing.T) {
+	t.Run("all fields", func(t *testing.T) {
 		pmm := PMM{
 			ServiceName:    "mariadb-host01",
 			Cluster:        "prod-cluster",
@@ -359,17 +360,17 @@ func TestPMMConstLabels(t *testing.T) {
 		}, pmm.ConstLabels())
 	})
 
-	t.Run("zero value nao gera labels", func(t *testing.T) {
+	t.Run("zero value generates no labels", func(t *testing.T) {
 		require.Empty(t, PMM{}.ConstLabels())
 	})
 
-	t.Run("campos parciais", func(t *testing.T) {
+	t.Run("partial fields", func(t *testing.T) {
 		pmm := PMM{ServiceName: "mariadb-host01"}
 		require.Equal(t, map[string]string{"service_name": "mariadb-host01"}, pmm.ConstLabels())
 	})
 }
 
-// As flags de web e datasource também aceitam variáveis de ambiente (seção 6).
+// The web and datasource flags also accept environment variables (section 6).
 func TestRegisterReadsEnv(t *testing.T) {
 	t.Setenv("MARIADB_DSN", "mariadb://env:senha@tcp(envhost:3306)/")
 	t.Setenv("MARIADB_WEB_LISTEN_ADDRESS", ":9105")
@@ -387,7 +388,7 @@ func TestRegisterReadsEnv(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
-// A flag explícita tem precedência sobre a variável de ambiente.
+// The explicit flag takes precedence over the environment variable.
 func TestFlagOverridesEnv(t *testing.T) {
 	t.Setenv("MARIADB_WEB_LISTEN_ADDRESS", ":9105")
 

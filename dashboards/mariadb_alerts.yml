@@ -1,16 +1,16 @@
 # mariadb_alerts.yml
 #
-# Regras de alerta para o mariadb_exporter, no formato de regras do Prometheus
-# (mariadb_exporter_pmm_integration.md, seção 10).
+# Alert rules for mariadb_exporter, in Prometheus rule format
+# (mariadb_exporter_pmm_integration.md, section 10).
 #
-# Importar via PMM UI → Alerting → Alert Rules → + New Alert Rule, ou carregar
-# como regra do próprio Prometheus/VictoriaMetrics se o exporter for usado fora
-# do PMM (ver docker-compose.dev.yml para o ambiente de teste local).
+# Import via PMM UI → Alerting → Alert Rules → + New Alert Rule, or load as a
+# rule in Prometheus/VictoriaMetrics itself if the exporter is used outside
+# PMM (see docker-compose.dev.yml for the local test environment).
 #
-# Os labels service_name/cluster/environment usados em $labels dependem das
-# flags --pmm.service-name, --pmm.cluster e --pmm.environment estarem
-# configuradas no exporter (ver seção 3 do documento de integração); sem elas,
-# as anotações ficam vazias mas os alertas continuam funcionando normalmente.
+# The service_name/cluster/environment labels used in $labels depend on the
+# --pmm.service-name, --pmm.cluster and --pmm.environment flags being
+# configured on the exporter (see section 3 of the integration document);
+# without them, the annotations are empty but the alerts still work normally.
 
 groups:
   - name: mariadb_availability
@@ -21,8 +21,8 @@ groups:
         labels:
           severity: critical
         annotations:
-          summary: "Instância MariaDB indisponível"
-          description: "{{ $labels.service_name }} está offline há mais de 1 minuto."
+          summary: "MariaDB instance unavailable"
+          description: "{{ $labels.service_name }} has been offline for more than 1 minute."
 
       - alert: MariaDBHighLatency
         expr: |
@@ -33,8 +33,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Latência P99 acima de 1s"
-          description: "{{ $labels.service_name }} com P99={{ $value }}s nos últimos 5 minutos."
+          summary: "P99 latency above 1s"
+          description: "{{ $labels.service_name }} with P99={{ $value }}s over the last 5 minutes."
 
       - alert: MariaDBReplicationLag
         expr: mariadb_slave_seconds_behind_master > 60
@@ -42,8 +42,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Atraso de replicação alto"
-          description: "{{ $labels.service_name }} com atraso de {{ $value }}s."
+          summary: "High replication lag"
+          description: "{{ $labels.service_name }} lagging by {{ $value }}s."
 
       - alert: MariaDBDiskAlmostFull
         expr: |
@@ -52,8 +52,8 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Disco do MariaDB acima de 85%"
-          description: "{{ $labels.service_name }} — path={{ $labels.path }} em {{ $value | humanizePercentage }}."
+          summary: "MariaDB disk above 85%"
+          description: "{{ $labels.service_name }} — path={{ $labels.path }} at {{ $value | humanizePercentage }}."
 
       - alert: MariaDBMetadataLockAccumulation
         expr: mariadb_metadata_locks_total > 10
@@ -61,5 +61,5 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Muitos MDL locks ativos"
-          description: "{{ $labels.service_name }} com {{ $value }} metadata locks ativos."
+          summary: "Too many active MDL locks"
+          description: "{{ $labels.service_name }} has {{ $value }} active metadata locks."
