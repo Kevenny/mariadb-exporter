@@ -32,7 +32,7 @@ services:
       pmm-server:
         condition: service_healthy
       exporter:
-        condition: service_started
+        condition: service_healthy
     environment:
       PMM_AGENT_SERVER_ADDRESS: pmm-server:8443
       PMM_AGENT_SERVER_USERNAME: admin

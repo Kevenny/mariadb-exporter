@@ -1,0 +1,86 @@
+version: 2
+
+project_name: mariadb_exporter
+
+builds:
+  - id: mariadb_exporter
+    main: ./cmd/mariadb_exporter
+    binary: mariadb_exporter
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X main.version={{ .Version }} -X main.buildDate={{ .Date }}
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64, arm]
+    goarm: ["7"]
+    ignore:
+      - goos: darwin
+        goarch: arm
+      - goos: windows
+        goarch: arm
+
+archives:
+  - formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - README.md
+      - packaging/systemd/*
+      - packaging/web-config.yml.example
+      - custom_metrics/example.yml
+
+checksum:
+  name_template: checksums.txt
+
+nfpms:
+  # Debian package names don't allow '_'.
+  - package_name: mariadb-exporter
+    homepage: https://github.com/Kevenny/mariadb-exporter
+    maintainer: Kevenny <kevenny@users.noreply.github.com>
+    description: Prometheus exporter dedicated to MariaDB (userstat, query_response_time, metadata locks, PMM integration).
+    license: Internal use
+    formats: [deb, rpm]
+    # Same path the versioned systemd unit and the deploy script use.
+    bindir: /usr/local/bin
+    # Modes are explicit: the source files' modes depend on the checkout
+    # (a Windows clone reports 0777).
+    contents:
+      - src: packaging/systemd/mariadb_exporter.service
+        dst: /usr/lib/systemd/system/mariadb_exporter.service
+        file_info:
+          mode: 0644
+      - dst: /etc/mariadb_exporter
+        type: dir
+        file_info:
+          mode: 0750
+          owner: root
+          group: mariadb_exporter
+      # Holds the monitoring password once edited: never world-readable, and
+      # kept across upgrades.
+      - src: packaging/systemd/mariadb_exporter.env
+        dst: /etc/mariadb_exporter/mariadb_exporter.env
+        type: config|noreplace
+        file_info:
+          mode: 0640
+          owner: root
+          group: mariadb_exporter
+      - src: packaging/web-config.yml.example
+        dst: /usr/share/doc/mariadb-exporter/web-config.yml.example
+        file_info:
+          mode: 0644
+      - src: custom_metrics/example.yml
+        dst: /usr/share/doc/mariadb-exporter/custom_metrics.example.yml
+        file_info:
+          mode: 0644
+    scripts:
+      preinstall: packaging/nfpm/preinstall.sh
+      postinstall: packaging/nfpm/postinstall.sh
+      preremove: packaging/nfpm/preremove.sh
+      postremove: packaging/nfpm/postremove.sh
+
+changelog:
+  use: git
+  sort: asc

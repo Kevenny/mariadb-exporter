@@ -38,9 +38,21 @@ What `mysqld_exporter` doesn't deliver and this exporter does:
 
 ## Installation
 
+### Packages and binaries
+
+Each `v*` tag publishes a GitHub Release (via [GoReleaser](.goreleaser.yml))
+with:
+
+- `.deb` and `.rpm` packages (amd64, arm64, armv7). They install the binary in
+  `/usr/local/bin`, the systemd unit, `/etc/mariadb_exporter/mariadb_exporter.env`
+  (`0640 root:mariadb_exporter`, kept on upgrades) and create the
+  `mariadb_exporter` system user. The service is **not** started automatically:
+  set the DSN, then `systemctl enable --now mariadb_exporter`.
+- `tar.gz`/`zip` archives for Linux, macOS and Windows (amd64/arm64).
+
 ### From source
 
-Requires Go 1.22 or later.
+Requires Go 1.26 or later.
 
 ```bash
 git clone https://github.com/Kevenny/mariadb-exporter.git
@@ -56,6 +68,33 @@ make docker
 docker run -d --name mariadb_exporter \
   -p 9104:9104 \
   -e MARIADB_DSN="mariadb://mariadb_exporter:password@tcp(10.0.0.10:3306)/" \
+  mariadb_exporter:latest
+```
+
+The image is `scratch`-based, runs as an unprivileged user and builds for
+several architectures without emulation:
+
+```bash
+docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 -t mariadb_exporter .
+```
+
+It ships a `HEALTHCHECK` that runs `mariadb_exporter healthcheck` (the image
+has no shell or curl). With TLS or basic auth on the exporter, point it at the
+right URL — credentials go in the URL:
+
+```bash
+docker run ... -e MARIADB_HEALTHCHECK_URL="https://prometheus:PASSWORD@127.0.0.1:9104/health" ...
+# self-signed certificate: override the command to add --insecure-skip-verify
+```
+
+To keep the password out of the environment, mount it as a file (Docker or
+Kubernetes secret):
+
+```bash
+docker run ... \
+  -e MARIADB_DSN="mariadb://mariadb_exporter@tcp(10.0.0.10:3306)/" \
+  -e MARIADB_PASSWORD_FILE=/run/secrets/mariadb_password \
+  -v ./mariadb_password:/run/secrets/mariadb_password:ro \
   mariadb_exporter:latest
 ```
 
@@ -87,8 +126,15 @@ sudo systemctl status mariadb_exporter
 
 ## Configuration
 
-The DSN is required and can come from the `--datasource.name` flag or the
-`MARIADB_DSN` environment variable.
+The connection settings come from **one** of two sources:
+
+- a DSN, via `--datasource.name` or the `MARIADB_DSN` environment variable; or
+- a my.cnf-style file, via `--config.my-cnf`.
+
+In either case, `--datasource.password-file` (env `MARIADB_PASSWORD_FILE`)
+can supply the password from a file, overriding the one in the DSN or my.cnf.
+That keeps the password out of the process arguments (visible in `ps`) and
+works directly with Docker and Kubernetes secrets.
 
 ### DSN format
 
@@ -106,11 +152,53 @@ mariadb://pmm:password@unix(/var/run/mysql/mysql.sock)/
 # With driver parameters
 mariadb://pmm:password@tcp(localhost:3306)/?timeout=30s&readTimeout=30s
 
-# Without credentials: the driver reads ~/.my.cnf
-mariadb://@tcp(localhost:3306)/?readTimeout=30s
+# Without the password: it comes from --datasource.password-file
+mariadb://pmm@tcp(localhost:3306)/
 ```
 
-> The password never appears in logs — the DSN is masked before being logged.
+> The password never appears in logs — the connection settings are masked
+> before being logged.
+
+### my.cnf file
+
+`--config.my-cnf` reads the `[client]`, `[client-mariadb]` and
+`[mariadb-client]` sections (later ones override earlier ones), with the
+options `user`, `password`, `host`, `port`, `socket`, `ssl`, `ssl-ca`,
+`ssl-cert` and `ssl-key`:
+
+```ini
+# /etc/mariadb_exporter/my.cnf  (0640 root:mariadb_exporter)
+[client]
+user     = mariadb_exporter
+password = "strong password"
+host     = 10.0.0.10
+port     = 3306
+ssl-ca   = /etc/mariadb_exporter/tls/ca.pem
+```
+
+Without `host`, `socket` is used; without either, `localhost:3306`.
+`--config.my-cnf` and `--datasource.name` are mutually exclusive.
+
+### TLS to MariaDB
+
+Any of the flags below enables TLS (minimum TLS 1.2) with server certificate
+verification against the given CA — including an internal CA, which the
+`scratch` image wouldn't otherwise trust:
+
+```bash
+mariadb_exporter \
+  --tls.ca=/etc/mariadb_exporter/tls/ca.pem \
+  --tls.cert=/etc/mariadb_exporter/tls/client.pem \   # mutual TLS (REQUIRE X509)
+  --tls.key=/etc/mariadb_exporter/tls/client.key
+```
+
+- The server name checked is the DSN/my.cnf host.
+- The flags override the my.cnf `ssl-*` options; a bare `ssl` in my.cnf
+  enables TLS against the system CAs.
+- With TLS configured explicitly, a `tls=preferred` in the DSN no longer
+  falls back to plaintext.
+- `--tls.insecure-skip-verify` disables certificate verification — for
+  testing only.
 
 ### Flags
 
@@ -120,11 +208,16 @@ mariadb://@tcp(localhost:3306)/?readTimeout=30s
 | `--web.config.file` | — | YAML file with TLS and/or basic auth (see [Security](#security)) |
 | `--web.systemd-socket` | `false` | Use systemd socket activation instead of opening the port (Linux) |
 | `--web.telemetry-path` | `/metrics` | Metrics path |
-| `--web.max-requests` | `0` | Maximum concurrent scrapes (0 = unlimited) |
+| `--web.max-requests` | `5` | Maximum concurrent scrapes; extra ones get `503` (0 = unlimited) |
 | `--datasource.name` | env `MARIADB_DSN` | Connection DSN |
+| `--config.my-cnf` | — | my.cnf-style file with the connection settings (alternative to the DSN) |
+| `--datasource.password-file` | — | File with the password; overrides the DSN/my.cnf one |
+| `--tls.ca` | — | CA (PEM) to verify the MariaDB server; enables TLS |
+| `--tls.cert` / `--tls.key` | — | Client certificate and key for mutual TLS |
+| `--tls.insecure-skip-verify` | `false` | TLS without certificate verification (testing only) |
 | `--datasource.max-open` | `3` | Maximum open connections |
 | `--datasource.max-idle` | `3` | Maximum idle connections |
-| `--datasource.timeout` | `30s` | Query timeout |
+| `--datasource.timeout` | `30s` | Connection check timeout and server-side `max_statement_time` |
 | `--collector.userstat` | `true` | `userstat` collector |
 | `--collector.tablestat` | `true` | `tablestat` collector |
 | `--collector.tablestat.limit` | `500` | Table limit per scrape |
@@ -140,6 +233,7 @@ mariadb://@tcp(localhost:3306)/?readTimeout=30s
 | `--collector.global_status` | `true` | `global_status` collector |
 | `--collector.global_variables` | `true` | `global_variables` collector |
 | `--custom-metrics` | — | Custom metrics YAML file (repeatable) |
+| `--custom-metrics.max-rows` | `1000` | Maximum rows read per custom query |
 | `--pmm.service-name` | `$(hostname)-mariadb` | Service name in the PMM inventory |
 | `--pmm.cluster` | — | Cluster name for grouping in PMM |
 | `--pmm.environment` | `production` | Environment (production, staging, dev) |
@@ -158,13 +252,36 @@ flow.
 Any collector can be turned off with the `--no-` prefix, e.g.
 `--no-collector.tablestat`.
 
+### Scrape deadlines
+
+- A scrape ends at whichever comes first: Prometheus's scrape timeout (read
+  from the `X-Prometheus-Scrape-Timeout-Seconds` header, minus 250 ms so a
+  partial answer still arrives in time), the client disconnecting, or the
+  exporter's internal 30 s cap.
+- Collectors that didn't finish count as errors in
+  `mariadb_scrape_errors_total`.
+- Canceling only closes the client side of a query. To stop the server from
+  running it to the end, every connection sets the MariaDB session variable
+  `max_statement_time` to `--datasource.timeout`. A `max_statement_time`
+  given in the DSN takes precedence; `max_statement_time=0` disables it.
+  Requires MariaDB >= 10.1.
+
 ### Environment variables
 
-The `--web.*` and `--datasource.*` flags also read from the environment:
+The `--web.*`, `--datasource.*` and connection flags also read from the
+environment:
 
 | Variable | Equivalent flag |
 | --- | --- |
 | `MARIADB_DSN` | `--datasource.name` |
+| `MARIADB_CONFIG_MY_CNF` | `--config.my-cnf` |
+| `MARIADB_PASSWORD_FILE` | `--datasource.password-file` |
+| `MARIADB_TLS_CA` | `--tls.ca` |
+| `MARIADB_TLS_CERT` | `--tls.cert` |
+| `MARIADB_TLS_KEY` | `--tls.key` |
+| `MARIADB_TLS_INSECURE_SKIP_VERIFY` | `--tls.insecure-skip-verify` |
+| `MARIADB_CUSTOM_METRICS_MAX_ROWS` | `--custom-metrics.max-rows` |
+| `MARIADB_HEALTHCHECK_URL` | `healthcheck --url` |
 | `MARIADB_WEB_LISTEN_ADDRESS` | `--web.listen-address` |
 | `MARIADB_WEB_TELEMETRY_PATH` | `--web.telemetry-path` |
 | `MARIADB_WEB_MAX_REQUESTS` | `--web.max-requests` |
@@ -386,6 +503,17 @@ mariadb_exporter --custom-metrics=/etc/mariadb_exporter/custom.yml
 - With more than one value column, the column name is suffixed to the metric name
 - An invalid YAML is a configuration error and prevents startup, instead of
   failing silently on the first scrape
+- Only `SELECT`, `WITH`, `SHOW` and `VALUES` statements are accepted. MariaDB
+  executable comments (`/*! ... */`) are rejected, since the server runs their
+  content.
+- The queries run inside a `READ ONLY` transaction that is always rolled back,
+  so an `INSERT`/`UPDATE`/`DELETE` fails. This is a safety net, not a sandbox:
+  DDL commits implicitly. The real boundary is the exporter user's privileges
+  (see [Monitoring user](#monitoring-user)).
+- Each query reads at most `--custom-metrics.max-rows` rows (default 1000).
+  Beyond that, the extra rows are dropped and the scrape counts an error, so a
+  query that grew unbounded shows up in `mariadb_scrape_errors_total` instead
+  of flooding Prometheus with series.
 
 See [custom_metrics/example.yml](custom_metrics/example.yml) for more examples.
 
@@ -514,6 +642,20 @@ curl -s http://localhost:9104/metrics | grep -E "^mariadb_up|^mariadb_info"
 Docker `healthcheck`. If you enable basic auth via `--web.config.file`, the
 probe will need to send the credential (see [Security](#security)).
 
+When more than `--web.max-requests` scrapes are running at once, `/metrics`
+answers `503` instead of queuing them on the connection pool.
+
+### `healthcheck` subcommand
+
+`mariadb_exporter healthcheck` queries a running exporter's `/health` and
+exits `0` only on HTTP 200. It exists for environments without curl, such as
+the Docker image:
+
+```bash
+mariadb_exporter healthcheck                                    # http://127.0.0.1:9104/health
+mariadb_exporter healthcheck --url=https://user:pass@127.0.0.1:9104/health --insecure-skip-verify
+```
+
 ---
 
 ## Development
@@ -525,6 +667,23 @@ make vet        # go vet
 make lint       # golangci-lint
 make fmt        # gofmt -s -w
 make docker     # Docker image
+```
+
+### CI and releases
+
+- [CI](.github/workflows/ci.yml) runs on every push and PR: gofmt, `go vet`,
+  `go test -race`, govulncheck, shellcheck on the scripts, a multi-arch image
+  build, and a GoReleaser snapshot that validates the packaging.
+- Pushing a `v*` tag runs the [release](.github/workflows/release.yml)
+  workflow, which publishes binaries, `.deb`/`.rpm` packages and checksums to
+  a GitHub Release.
+- [Dependabot](.github/dependabot.yml) proposes weekly updates for Go modules,
+  the digest-pinned base image and the GitHub Actions.
+
+Build the release artifacts locally (output in `dist/`):
+
+```bash
+docker run --rm -v "$PWD:/src" -w /src goreleaser/goreleaser release --snapshot --clean
 ```
 
 ### Full local environment
@@ -548,7 +707,9 @@ exporter/                collector orchestration, version/plugin detection
 config/                  flag and environment variable parsing
 web/                     /metrics, /health and / handlers
 packaging/systemd/       unit and EnvironmentFile
+packaging/nfpm/          .deb/.rpm install and removal scripts
 custom_metrics/          custom metrics YAML example
+.github/                 CI, release and Dependabot
 ```
 
 ### How to add a collector
@@ -603,8 +764,16 @@ Indexes* dashboard already has a panel for it.
 
 **`mariadb_up = 0`**
 Check the DSN, the firewall, and whether the user has permission to connect
-from the exporter's host. The log carries the driver's error; `/health`
-carries the same message over HTTP.
+from the exporter's host. The log carries the driver's error; `/health` only
+returns a generic message, so as not to expose addresses or credentials.
+
+**`x509: certificate signed by unknown authority` / `certificate is valid for X, not Y`**
+The server certificate isn't signed by the CA given in `--tls.ca` (or
+`ssl-ca`), or the host in the DSN/my.cnf doesn't match a name in the
+certificate. Connect using the name the certificate was issued for.
+
+**`Connections using insecure transport are prohibited`**
+The server has `require_secure_transport=ON`: enable TLS with `--tls.ca`.
 
 **Too many `tablestat` / `indexstat` series**
 Lower the limits: `--collector.tablestat.limit=100`,
@@ -612,8 +781,18 @@ Lower the limits: `--collector.tablestat.limit=100`,
 `rows_read DESC`, so the cutoff keeps the most relevant ones.
 
 **Scrape timeouts**
-Increase `--datasource.timeout` and consider disabling the more expensive
+The exporter answers within Prometheus's `scrape_timeout` with whatever
+finished; check `mariadb_collector_scrape_duration_seconds` to find the slow
+collector. Raise `scrape_timeout` in Prometheus or disable the more expensive
 collectors on instances with many tables (`--no-collector.tablestat`).
+
+**`Query execution was interrupted (max_statement_time exceeded)`**
+A query ran longer than `--datasource.timeout`. Increase it, or disable the
+limit with `max_statement_time=0` in the DSN.
+
+**`/metrics` returns `503 too many concurrent scrapes`**
+More scrapers than `--web.max-requests` (default 5) hit the exporter at once.
+Raise the limit if every scraper is legitimate.
 
 ---
 
@@ -691,10 +870,16 @@ scrape_configs:
 
 ### Credentials
 
-- The password is never logged: the DSN is masked before any log line.
-- systemd's `EnvironmentFile` contains the password and must be `0640
-  root:<service>` (the deploy script already creates it this way, with no
-  open permission window).
+- The password is never logged: the connection settings are masked before
+  any log line.
+- Don't pass the password in `--datasource.name` on the command line: it
+  shows up in `ps`. Use `MARIADB_DSN`, `--datasource.password-file` or
+  `--config.my-cnf`.
+- systemd's `EnvironmentFile`, the password file and the my.cnf contain the
+  password and must be `0640 root:<service>` (the deploy script and the
+  packages already create the env file this way).
+- Encrypt the connection to MariaDB with `--tls.ca` when it crosses a
+  network (see [TLS to MariaDB](#tls-to-mariadb)).
 - Prefer a dedicated MariaDB user with the minimum privileges from the
   [Monitoring user](#monitoring-user) section and `MAX_USER_CONNECTIONS 5`.
 
@@ -750,9 +935,12 @@ parsing `INNODB STATUS`'s free-form text would be fragile. The text is used
 only as a fallback for `mariadb_innodb_deadlocks_total`, which doesn't exist
 as a status variable on all builds.
 
-**`prometheus/common` version**
-The specification lists `v0.52.0`, which was never published to the upstream
-repository. The project uses `v0.52.3`, the closest real release.
+**Dependency versions**
+The specification lists `prometheus/common v0.52.0` and Go 1.22. Both were
+updated to clear known vulnerabilities (govulncheck runs in CI). The
+exporter-toolkit is held at `v0.12.0`, the last release using `go-kit/log`;
+newer ones switch to `log/slog`, a migration that touches every logger in the
+project.
 
 ---
 

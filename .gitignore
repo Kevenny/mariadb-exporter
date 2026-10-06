@@ -5,3 +5,4 @@ cover
 cover.*
 *.exe
 *.test
+dist/
