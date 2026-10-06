@@ -1,0 +1,74 @@
+# Stack to test mariadb_exporter inside Percona PMM 3 as an External Service:
+# MariaDB -> exporter -> PMM Server (VictoriaMetrics + Grafana).
+#
+#   docker compose -f docker-compose.yml -f docker-compose.pmm.yml up -d --build
+#
+#   PMM: https://localhost:8443  (admin/admin, self-signed certificate)
+#     - Inventory > Services: "mariadb-dev" (External) and "mariadb-dev-mysql"
+#     - Dashboards > folder "MariaDB Exporter": the repository dashboards
+#
+# This file extends the root docker-compose.yml (which already brings up
+# MariaDB + the exporter); it should not be used on its own.
+
+services:
+  pmm-server:
+    image: percona/pmm-server:3
+    container_name: mariadb_exporter_pmm_server
+    ports:
+      - "8443:8443"
+    volumes:
+      - pmm_data:/srv
+    healthcheck:
+      test: ["CMD", "curl", "-skf", "https://127.0.0.1:8443/v1/server/readyz"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  pmm-client:
+    image: percona/pmm-client:3
+    container_name: mariadb_exporter_pmm_client
+    depends_on:
+      pmm-server:
+        condition: service_healthy
+      exporter:
+        condition: service_started
+    environment:
+      PMM_AGENT_SERVER_ADDRESS: pmm-server:8443
+      PMM_AGENT_SERVER_USERNAME: admin
+      PMM_AGENT_SERVER_PASSWORD: admin
+      PMM_AGENT_SERVER_INSECURE_TLS: "1"
+      PMM_AGENT_SETUP: "1"
+      PMM_AGENT_SETUP_FORCE: "1"
+      PMM_AGENT_SETUP_NODE_NAME: pmm-client-dev
+      PMM_AGENT_CONFIG_FILE: config/pmm-agent.yaml
+      PMM_AGENT_PRERUN_FILE: /dev-pmm/register.sh
+    volumes:
+      - ./dev/pmm/register.sh:/dev-pmm/register.sh:ro
+
+  # One-shot: imports the repository dashboards into PMM's Grafana.
+  pmm-dashboards:
+    image: curlimages/curl:latest
+    container_name: mariadb_exporter_pmm_dashboards
+    depends_on:
+      pmm-server:
+        condition: service_healthy
+    entrypoint: ["sh", "/dev-pmm/import-dashboards.sh"]
+    volumes:
+      - ./dev/pmm/import-dashboards.sh:/dev-pmm/import-dashboards.sh:ro
+      - ./dashboards:/dashboards:ro
+    restart: "no"
+
+  # Light, continuous workload so the graphs have something to show.
+  load:
+    image: mariadb:11.4
+    container_name: mariadb_exporter_dev_load
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    entrypoint: ["bash", "/dev-pmm/load.sh"]
+    volumes:
+      - ./dev/pmm/load.sh:/dev-pmm/load.sh:ro
+
+volumes:
+  pmm_data:
