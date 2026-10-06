@@ -282,12 +282,7 @@ func NormalizeDSN(dsn string) (string, error) {
 		return "", fmt.Errorf("empty DSN")
 	}
 
-	for _, scheme := range []string{"mariadb://", "mysql://"} {
-		if strings.HasPrefix(strings.ToLower(dsn), scheme) {
-			dsn = dsn[len(scheme):]
-			break
-		}
-	}
+	_, dsn = splitScheme(dsn)
 
 	// The driver requires the slash separating the address from the database
 	// name. Without it, a DSN like "user:password@tcp(host:3306)" is
@@ -299,31 +294,38 @@ func NormalizeDSN(dsn string) (string, error) {
 	return dsn, nil
 }
 
+// splitScheme separates the optional mariadb:// or mysql:// prefix from the DSN.
+func splitScheme(dsn string) (scheme, rest string) {
+	for _, s := range []string{"mariadb://", "mysql://"} {
+		if strings.HasPrefix(strings.ToLower(dsn), s) {
+			return dsn[:len(s)], dsn[len(s):]
+		}
+	}
+	return "", dsn
+}
+
 // RedactDSN removes the password from the DSN so it can appear in logs.
+//
+// It mirrors go-sql-driver/mysql's ParseDSN split rule exactly — the password
+// runs from the first ':' to the last '@' before the last '/' — so any
+// password the driver accepts (including ones containing ':' or '@', or a
+// DSN with '@' in its query parameters) is masked in full.
 func RedactDSN(dsn string) string {
-	at := strings.LastIndex(dsn, "@")
+	scheme, rest := splitScheme(dsn)
+
+	end := strings.LastIndex(rest, "/")
+	if end < 0 {
+		end = len(rest)
+	}
+	at := strings.LastIndex(rest[:end], "@")
 	if at < 0 {
 		return dsn
 	}
-	head, tail := dsn[:at], dsn[at:]
-
-	// The scheme prefix is preserved separately: without this, the ':' in
-	// "mariadb://" would be confused with the password separator in DSNs
-	// without credentials, corrupting the URL.
-	prefix := ""
-	if idx := strings.Index(head, "://"); idx >= 0 {
-		prefix, head = head[:idx+3], head[idx+3:]
-	}
-
-	colon := strings.LastIndex(head, ":")
+	colon := strings.Index(rest[:at], ":")
 	if colon < 0 {
 		return dsn
 	}
-	// Avoids masking the port of a DSN without credentials, e.g. "tcp(host:3306)".
-	if strings.ContainsAny(head[colon:], "()") {
-		return dsn
-	}
-	return prefix + head[:colon] + ":***" + tail
+	return scheme + rest[:colon] + ":***" + rest[at:]
 }
 
 // dsnQueryParams extracts the DSN's query parameters, if any. Used only in

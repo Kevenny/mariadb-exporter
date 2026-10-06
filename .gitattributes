@@ -1,0 +1,4 @@
+# Always check out with LF, even on Windows with core.autocrlf=true: shell
+# scripts, systemd units and env files mounted into Linux containers or copied
+# to servers break with CRLF ("bad interpreter", "$'\r': command not found").
+* text=auto eol=lf

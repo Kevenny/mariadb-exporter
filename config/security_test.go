@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/go-sql-driver/mysql"
 	"github.com/stretchr/testify/require"
 )
 
@@ -37,14 +38,44 @@ func TestRedactDSNNeverLeaksPassword(t *testing.T) {
 	}
 }
 
-// A password containing ':' can confuse the heuristic that looks for the
-// user:password separator.
+// A password containing ':' must be masked in full, not only after its last ':'.
 func TestRedactDSNPasswordWithColon(t *testing.T) {
 	dsn := "mariadb://user:parte1:parte2@tcp(localhost:3306)/"
 	redacted := RedactDSN(dsn)
 
-	require.NotContains(t, redacted, "parte2",
-		"part of the password after the ':' leaked: %q", redacted)
+	require.Equal(t, "mariadb://user:***@tcp(localhost:3306)/", redacted)
+}
+
+// An '@' in the query parameters must not be mistaken for the credentials
+// separator — that used to leave the whole password in the log.
+func TestRedactDSNAtSignInParams(t *testing.T) {
+	dsn := "user:" + senhaSecreta + "@tcp(h:3306)/db?x=a@b"
+	require.Equal(t, "user:***@tcp(h:3306)/db?x=a@b", RedactDSN(dsn))
+}
+
+// The masking must agree with how the driver itself splits the DSN: whatever
+// the driver would use as the password must never reach the log.
+func TestRedactDSNMatchesDriverParsing(t *testing.T) {
+	dsns := []string{
+		"mariadb://user:" + senhaSecreta + "@tcp(localhost:3306)/",
+		"user:pa:ss:" + senhaSecreta + "@tcp(h:3306)/db",
+		"user:p@ss@" + senhaSecreta + "@tcp(h:3306)/db?x=a@b&y=c:d",
+		"user@dominio:" + senhaSecreta + "@unix(/var/run/mysqld/mysqld.sock)/",
+		"user:" + senhaSecreta + "/x@tcp(h:3306)/db",
+	}
+
+	for _, raw := range dsns {
+		normalized, err := NormalizeDSN(raw)
+		require.NoError(t, err)
+		parsed, err := mysql.ParseDSN(normalized)
+		require.NoError(t, err, raw)
+		require.NotEmpty(t, parsed.Passwd)
+
+		redacted := RedactDSN(raw)
+		require.NotContains(t, redacted, parsed.Passwd, "password leaked: %q", redacted)
+		require.Contains(t, redacted, parsed.User+":***@", "user lost: %q", redacted)
+		require.Contains(t, redacted, parsed.Addr, "address lost: %q", redacted)
+	}
 }
 
 // Validate errors must not include the full DSN — error messages go to the
