@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-kit/log"
@@ -24,14 +26,22 @@ type Pinger interface {
 	Ping(ctx context.Context) error
 }
 
+// scrapeTimeoutOffset is subtracted from Prometheus's scrape timeout so the
+// exporter answers with partial data before Prometheus gives up on it.
+const scrapeTimeoutOffset = 250 * time.Millisecond
+
 // Options configures the HTTP mux.
 type Options struct {
 	TelemetryPath string
 	MaxRequests   int
-	Registry      *prometheus.Registry
-	Pinger        Pinger
-	Version       string
-	Logger        log.Logger
+	// Registry holds collectors that don't touch the database (build info,
+	// Go and process metrics).
+	Registry *prometheus.Registry
+	// Scrape returns the database collector bound to the request's context.
+	Scrape  func(context.Context) prometheus.Collector
+	Pinger  Pinger
+	Version string
+	Logger  log.Logger
 }
 
 // NewHandler assembles the mux with /metrics, /health, and the index page.
@@ -43,17 +53,75 @@ func NewHandler(opts Options) http.Handler {
 		telemetryPath = "/metrics"
 	}
 
-	metricsHandler := promhttp.HandlerFor(opts.Registry, promhttp.HandlerOpts{
-		ErrorLog:            promLogger{opts.Logger},
-		ErrorHandling:       promhttp.ContinueOnError,
-		MaxRequestsInFlight: opts.MaxRequests,
-	})
-	mux.Handle(telemetryPath, metricsHandler)
-
+	mux.Handle(telemetryPath, limitInFlight(opts.MaxRequests, metricsHandler(opts)))
 	mux.HandleFunc("/health", healthHandler(opts.Pinger, opts.Logger))
 	mux.HandleFunc("/", indexHandler(telemetryPath, opts.Version))
 
 	return mux
+}
+
+// metricsHandler gathers a per-request registry so the database collector
+// runs under the request's context: a scrape Prometheus abandoned (client
+// disconnect or its scrape timeout) cancels the queries instead of letting
+// them hold the connection pool.
+func metricsHandler(opts Options) http.Handler {
+	handlerOpts := promhttp.HandlerOpts{
+		ErrorLog:      promLogger{opts.Logger},
+		ErrorHandling: promhttp.ContinueOnError,
+	}
+
+	if opts.Scrape == nil {
+		return promhttp.HandlerFor(opts.Registry, handlerOpts)
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := r.Context()
+		if timeout, ok := scrapeTimeout(r); ok {
+			var cancel context.CancelFunc
+			ctx, cancel = context.WithTimeout(ctx, timeout)
+			defer cancel()
+		}
+
+		scoped := prometheus.NewRegistry()
+		scoped.MustRegister(opts.Scrape(ctx))
+
+		promhttp.HandlerFor(prometheus.Gatherers{opts.Registry, scoped}, handlerOpts).ServeHTTP(w, r)
+	})
+}
+
+// scrapeTimeout reads the deadline Prometheus announces for the scrape.
+func scrapeTimeout(r *http.Request) (time.Duration, bool) {
+	v := r.Header.Get("X-Prometheus-Scrape-Timeout-Seconds")
+	if v == "" {
+		return 0, false
+	}
+	seconds, err := strconv.ParseFloat(v, 64)
+	if err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) || seconds <= 0 {
+		return 0, false
+	}
+	timeout := time.Duration(seconds*float64(time.Second)) - scrapeTimeoutOffset
+	if timeout <= 0 {
+		return 0, false
+	}
+	return timeout, true
+}
+
+// limitInFlight rejects scrapes beyond max with 503, so a burst of requests
+// can't pile up goroutines waiting for the small connection pool.
+func limitInFlight(max int, next http.Handler) http.Handler {
+	if max <= 0 {
+		return next
+	}
+	slots := make(chan struct{}, max)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case slots <- struct{}{}:
+			defer func() { <-slots }()
+			next.ServeHTTP(w, r)
+		default:
+			http.Error(w, fmt.Sprintf("too many concurrent scrapes (limit %d)", max), http.StatusServiceUnavailable)
+		}
+	})
 }
 
 // healthHandler responds 200 when the database is reachable and 503

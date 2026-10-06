@@ -18,7 +18,7 @@ import (
 	"github.com/alecthomas/kingpin/v2"
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 	"github.com/prometheus/client_golang/prometheus"
 	promcollectors "github.com/prometheus/client_golang/prometheus/collectors"
 	toolkitweb "github.com/prometheus/exporter-toolkit/web"
@@ -54,8 +54,20 @@ func run() error {
 
 	cfg := config.Register(app)
 
-	if _, err := app.Parse(os.Args[1:]); err != nil {
+	app.Command("serve", "Run the exporter (default).").Default()
+	hc := app.Command("healthcheck", "Probe a running exporter's /health; exits 0 when healthy. "+
+		"Meant for Docker HEALTHCHECK, since the image has no shell or curl.")
+	hcURL := hc.Flag("url", "Health URL; credentials for basic auth go in the URL (https://user:pass@host/health).").
+		Envar("MARIADB_HEALTHCHECK_URL").Default("http://127.0.0.1:9104/health").String()
+	hcInsecure := hc.Flag("insecure-skip-verify", "Skip TLS certificate verification (self-signed exporter certificate).").Bool()
+	hcTimeout := hc.Flag("timeout", "Request timeout.").Default("5s").Duration()
+
+	cmd, err := app.Parse(os.Args[1:])
+	if err != nil {
 		return err
+	}
+	if cmd == hc.FullCommand() {
+		return healthcheck(*hcURL, *hcInsecure, *hcTimeout)
 	}
 
 	logger := newLogger(cfg.Log)
@@ -64,7 +76,7 @@ func run() error {
 		return err
 	}
 
-	dsn, err := config.NormalizeDSN(cfg.DataSource.Name)
+	driverCfg, err := cfg.DataSource.DriverConfig()
 	if err != nil {
 		return err
 	}
@@ -74,10 +86,10 @@ func run() error {
 		"version", version,
 		"build_date", buildDate,
 		"go", runtime.Version(),
-		"dsn", config.RedactDSN(cfg.DataSource.Name),
+		"dsn", config.Redacted(driverCfg),
 	)
 
-	db, err := openDB(dsn, cfg.DataSource)
+	db, err := openDB(driverCfg, cfg.DataSource)
 	if err != nil {
 		return err
 	}
@@ -124,7 +136,6 @@ func run() error {
 
 	registry := prometheus.NewRegistry()
 	registry.MustRegister(
-		exp,
 		exporter.BuildInfoCollector(version, buildDate, runtime.Version(), cfg.PMM),
 		promcollectors.NewGoCollector(),
 		promcollectors.NewProcessCollector(promcollectors.ProcessCollectorOpts{}),
@@ -134,6 +145,7 @@ func run() error {
 		TelemetryPath: cfg.Web.TelemetryPath,
 		MaxRequests:   cfg.Web.MaxRequests,
 		Registry:      registry,
+		Scrape:        exp.WithContext,
 		Pinger:        exp,
 		Version:       version,
 		Logger:        logger,
@@ -142,6 +154,10 @@ func run() error {
 	server := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
+		// Above the 30s scrape cap, so only a client that stops reading the
+		// response is cut off — it would otherwise hold a --web.max-requests slot.
+		WriteTimeout: 60 * time.Second,
+		IdleTimeout:  2 * time.Minute,
 	}
 
 	errCh := make(chan error, 1)
@@ -182,11 +198,12 @@ func run() error {
 
 // openDB opens the connection pool and validates connectivity immediately,
 // so that a wrong DSN fails at startup and not on the first scrape.
-func openDB(dsn string, ds config.DataSource) (*sql.DB, error) {
-	db, err := sql.Open("mysql", dsn)
+func openDB(driverCfg *mysql.Config, ds config.DataSource) (*sql.DB, error) {
+	connector, err := mysql.NewConnector(driverCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open connection: %w", err)
+		return nil, fmt.Errorf("invalid connection settings: %w", err)
 	}
+	db := sql.OpenDB(connector)
 
 	db.SetMaxOpenConns(ds.MaxOpen)
 	db.SetMaxIdleConns(ds.MaxIdle)
@@ -230,6 +247,7 @@ func buildCollectors(cfg *config.Config, logger log.Logger, detector *exporter.F
 		if err != nil {
 			return nil, err
 		}
+		custom.SetMaxRows(cfg.CustomMetricsMaxRows)
 		registry.Register(custom)
 		_ = level.Info(logger).Log("msg", "custom metrics loaded", "files", fmt.Sprint(cfg.CustomMetrics))
 	}

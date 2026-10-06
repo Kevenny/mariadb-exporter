@@ -48,10 +48,21 @@ type customMetric struct {
 	valueKinds map[string]prometheus.ValueType
 }
 
+// DefaultCustomMetricsMaxRows caps the rows read per custom query.
+const DefaultCustomMetricsMaxRows = 1000
+
 // CustomMetricsCollector runs user-defined queries from YAML files.
 type CustomMetricsCollector struct {
 	base
 	metrics []customMetric
+	maxRows int
+}
+
+// SetMaxRows changes the per-query row cap; n <= 0 keeps the default.
+func (c *CustomMetricsCollector) SetMaxRows(n int) {
+	if n > 0 {
+		c.maxRows = n
+	}
 }
 
 // NewCustomMetricsCollector loads the given YAML files and returns the
@@ -63,7 +74,8 @@ type CustomMetricsCollector struct {
 // without this, a panel filtered by cluster simply wouldn't find the series.
 func NewCustomMetricsCollector(paths []string, logger log.Logger, features FeatureProvider, constLabels prometheus.Labels) (*CustomMetricsCollector, error) {
 	c := &CustomMetricsCollector{
-		base: newBase("custom_metrics", "User-defined metrics from YAML files.", len(paths) > 0, logger, features),
+		base:    newBase("custom_metrics", "User-defined metrics from YAML files.", len(paths) > 0, logger, features),
+		maxRows: DefaultCustomMetricsMaxRows,
 	}
 
 	for _, path := range paths {
@@ -131,6 +143,9 @@ func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.La
 			"metric %q: invalid name for Prometheus (use only letters, digits, _ and :, starting with a letter, _ or :)",
 			name,
 		)
+	}
+	if kw := leadingKeyword(spec.Query); !readOnlyKeywords[kw] {
+		return nil, fmt.Errorf("metric %q: query must be a SELECT, WITH, SHOW or VALUES statement, found %q", name, kw)
 	}
 
 	cm := &customMetric{
@@ -221,13 +236,59 @@ func compileCustomMetric(name string, spec metricSpec, constLabels prometheus.La
 	return cm, nil
 }
 
+var readOnlyKeywords = map[string]bool{"SELECT": true, "WITH": true, "SHOW": true, "VALUES": true}
+
+// leadingKeyword returns the statement's first keyword, skipping whitespace,
+// opening parentheses and comments. MariaDB executable comments (/*! ... */,
+// /*M! ... */) are not skipped, since the server runs their content.
+func leadingKeyword(q string) string {
+	for {
+		q = strings.TrimLeft(q, " \t\r\n(")
+		switch {
+		case strings.HasPrefix(q, "/*!"), strings.HasPrefix(q, "/*M!"):
+			return "/*!"
+		case strings.HasPrefix(q, "/*"):
+			end := strings.Index(q, "*/")
+			if end < 0 {
+				return ""
+			}
+			q = q[end+2:]
+		case strings.HasPrefix(q, "--"), strings.HasPrefix(q, "#"):
+			end := strings.IndexByte(q, '\n')
+			if end < 0 {
+				return ""
+			}
+			q = q[end+1:]
+		default:
+			end := strings.IndexFunc(q, func(r rune) bool {
+				return !(r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z')
+			})
+			if end < 0 {
+				end = len(q)
+			}
+			return strings.ToUpper(q[:end])
+		}
+	}
+}
+
 // Collect implements Collector. An error in one query does not prevent the
 // others from running; the first error is returned at the end.
+//
+// All queries run inside a READ ONLY transaction, so a YAML that slips in an
+// INSERT/UPDATE/DELETE fails instead of modifying data. It is a safety net,
+// not a sandbox: DDL commits implicitly, so the exporter user's privileges
+// remain the real boundary.
 func (c *CustomMetricsCollector) Collect(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric) error {
+	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return fmt.Errorf("starting read-only transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
 	var firstErr error
 
 	for _, cm := range c.metrics {
-		if err := c.collectOne(ctx, db, ch, cm); err != nil {
+		if err := c.collectOne(ctx, tx, ch, cm); err != nil {
 			_ = level.Error(c.Logger()).Log("msg", "custom metric failed", "metric", cm.name, "err", err)
 			if firstErr == nil {
 				firstErr = fmt.Errorf("custom metric %q: %w", cm.name, err)
@@ -238,8 +299,8 @@ func (c *CustomMetricsCollector) Collect(ctx context.Context, db *sql.DB, ch cha
 	return firstErr
 }
 
-func (c *CustomMetricsCollector) collectOne(ctx context.Context, db *sql.DB, ch chan<- prometheus.Metric, cm customMetric) error {
-	rows, err := db.QueryContext(ctx, cm.query)
+func (c *CustomMetricsCollector) collectOne(ctx context.Context, tx *sql.Tx, ch chan<- prometheus.Metric, cm customMetric) error {
+	rows, err := tx.QueryContext(ctx, cm.query)
 	if err != nil {
 		return err
 	}
@@ -263,7 +324,13 @@ func (c *CustomMetricsCollector) collectOne(ctx context.Context, db *sql.DB, ch 
 		}
 	}
 
-	for rows.Next() {
+	for n := 0; rows.Next(); n++ {
+		// An unbounded result (a query missing its GROUP BY, a table that
+		// grew) would turn into thousands of series on every scrape.
+		if n == c.maxRows {
+			return fmt.Errorf("query returned more than %d rows; the rest were ignored (see --custom-metrics.max-rows)", c.maxRows)
+		}
+
 		values := make([]sql.RawBytes, len(columns))
 		scanArgs := make([]interface{}, len(columns))
 		for i := range values {

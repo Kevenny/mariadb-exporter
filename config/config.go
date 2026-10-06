@@ -47,10 +47,25 @@ func (w Web) WebConfigFile() string {
 
 // DataSource groups the MariaDB connection settings.
 type DataSource struct {
-	Name    string
-	MaxOpen int
-	MaxIdle int
-	Timeout time.Duration
+	Name         string
+	MyCnf        string
+	PasswordFile string
+	TLS          TLS
+	MaxOpen      int
+	MaxIdle      int
+	Timeout      time.Duration
+}
+
+// TLS groups the client-side TLS settings for the connection to MariaDB.
+type TLS struct {
+	CA                 string
+	Cert               string
+	Key                string
+	InsecureSkipVerify bool
+}
+
+func (t TLS) enabled() bool {
+	return t.CA != "" || t.Cert != "" || t.Key != "" || t.InsecureSkipVerify
 }
 
 // Collectors groups the toggles and limits of each collector.
@@ -96,6 +111,8 @@ type Config struct {
 	Log           Log
 	PMM           PMM
 	CustomMetrics []string
+
+	CustomMetricsMaxRows int
 }
 
 // defaultServiceName builds the default value for --pmm.service-name from the
@@ -162,13 +179,31 @@ func Register(app *kingpin.Application) *Config {
 	app.Flag("web.telemetry-path", "Path under which metrics are exposed.").
 		Default(envDefault("/metrics", "MARIADB_WEB_TELEMETRY_PATH")).
 		StringVar(&cfg.Web.TelemetryPath)
-	app.Flag("web.max-requests", "Maximum number of concurrent scrapes (0 = unlimited).").
-		Default(envDefault("0", "MARIADB_WEB_MAX_REQUESTS")).
+	app.Flag("web.max-requests", "Maximum number of concurrent scrapes; extra ones get 503 (0 = unlimited).").
+		Default(envDefault("5", "MARIADB_WEB_MAX_REQUESTS")).
 		IntVar(&cfg.Web.MaxRequests)
 
 	app.Flag("datasource.name", "DSN for connecting to MariaDB (default: env MARIADB_DSN).").
 		Default(envDefault("", "MARIADB_DSN", "MARIADB_DATASOURCE_NAME")).
 		StringVar(&cfg.DataSource.Name)
+	app.Flag("config.my-cnf", "my.cnf-style file with the [client] connection settings, as an alternative to the DSN.").
+		Default(envDefault("", "MARIADB_CONFIG_MY_CNF")).
+		PlaceHolder("FILE").StringVar(&cfg.DataSource.MyCnf)
+	app.Flag("datasource.password-file", "File containing the password; overrides the one in the DSN or my.cnf.").
+		Default(envDefault("", "MARIADB_PASSWORD_FILE")).
+		PlaceHolder("FILE").StringVar(&cfg.DataSource.PasswordFile)
+	app.Flag("tls.ca", "CA certificate (PEM) used to verify the MariaDB server; enables TLS.").
+		Default(envDefault("", "MARIADB_TLS_CA")).
+		PlaceHolder("FILE").StringVar(&cfg.DataSource.TLS.CA)
+	app.Flag("tls.cert", "Client certificate (PEM) for mutual TLS with MariaDB; requires --tls.key.").
+		Default(envDefault("", "MARIADB_TLS_CERT")).
+		PlaceHolder("FILE").StringVar(&cfg.DataSource.TLS.Cert)
+	app.Flag("tls.key", "Client private key (PEM) for mutual TLS with MariaDB; requires --tls.cert.").
+		Default(envDefault("", "MARIADB_TLS_KEY")).
+		PlaceHolder("FILE").StringVar(&cfg.DataSource.TLS.Key)
+	app.Flag("tls.insecure-skip-verify", "Enables TLS without verifying the MariaDB server certificate (testing only).").
+		Default(envDefault("false", "MARIADB_TLS_INSECURE_SKIP_VERIFY")).
+		BoolVar(&cfg.DataSource.TLS.InsecureSkipVerify)
 	app.Flag("datasource.max-open", "Maximum number of open connections in the pool.").
 		Default(envDefault("3", "MARIADB_DATASOURCE_MAX_OPEN")).
 		IntVar(&cfg.DataSource.MaxOpen)
@@ -210,6 +245,9 @@ func Register(app *kingpin.Application) *Config {
 
 	app.Flag("custom-metrics", "YAML file of custom metrics (repeatable).").
 		PlaceHolder("FILE").StringsVar(&cfg.CustomMetrics)
+	app.Flag("custom-metrics.max-rows", "Maximum rows read per custom metrics query.").
+		Default(envDefault("1000", "MARIADB_CUSTOM_METRICS_MAX_ROWS")).
+		IntVar(&cfg.CustomMetricsMaxRows)
 
 	app.Flag("pmm.service-name", "Service name in the PMM inventory.").
 		Default(envDefault(defaultServiceName(), "MARIADB_PMM_SERVICE_NAME")).
@@ -236,17 +274,28 @@ func Register(app *kingpin.Application) *Config {
 
 // Validate checks whether the minimum configuration is present.
 func (c *Config) Validate() error {
-	if strings.TrimSpace(c.DataSource.Name) == "" {
-		return fmt.Errorf("DSN not provided: use --datasource.name or the MARIADB_DSN environment variable")
+	hasDSN := strings.TrimSpace(c.DataSource.Name) != ""
+	hasMyCnf := c.DataSource.MyCnf != ""
+	switch {
+	case !hasDSN && !hasMyCnf:
+		return fmt.Errorf("no connection settings: use --datasource.name (env MARIADB_DSN) or --config.my-cnf")
+	case hasDSN && hasMyCnf:
+		return fmt.Errorf("--datasource.name and --config.my-cnf are mutually exclusive")
 	}
-	if _, err := NormalizeDSN(c.DataSource.Name); err != nil {
-		return err
+	if (c.DataSource.TLS.Cert == "") != (c.DataSource.TLS.Key == "") {
+		return fmt.Errorf("--tls.cert and --tls.key must be used together")
 	}
 	if c.Collectors.TableStatLimit < 0 {
 		return fmt.Errorf("--collector.tablestat.limit cannot be negative")
 	}
 	if c.Collectors.IndexStatLimit < 0 {
 		return fmt.Errorf("--collector.indexstat.limit cannot be negative")
+	}
+	if c.CustomMetricsMaxRows < 0 {
+		return fmt.Errorf("--custom-metrics.max-rows cannot be negative")
+	}
+	if c.Web.MaxRequests < 0 {
+		return fmt.Errorf("--web.max-requests cannot be negative")
 	}
 	// A --web.config.file that is missing, unreadable, or invalid is a
 	// configuration failure: better to abort at startup than to come up
@@ -302,30 +351,6 @@ func splitScheme(dsn string) (scheme, rest string) {
 		}
 	}
 	return "", dsn
-}
-
-// RedactDSN removes the password from the DSN so it can appear in logs.
-//
-// It mirrors go-sql-driver/mysql's ParseDSN split rule exactly — the password
-// runs from the first ':' to the last '@' before the last '/' — so any
-// password the driver accepts (including ones containing ':' or '@', or a
-// DSN with '@' in its query parameters) is masked in full.
-func RedactDSN(dsn string) string {
-	scheme, rest := splitScheme(dsn)
-
-	end := strings.LastIndex(rest, "/")
-	if end < 0 {
-		end = len(rest)
-	}
-	at := strings.LastIndex(rest[:end], "@")
-	if at < 0 {
-		return dsn
-	}
-	colon := strings.Index(rest[:at], ":")
-	if colon < 0 {
-		return dsn
-	}
-	return scheme + rest[:colon] + ":***" + rest[at:]
 }
 
 // dsnQueryParams extracts the DSN's query parameters, if any. Used only in

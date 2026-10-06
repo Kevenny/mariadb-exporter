@@ -105,10 +105,34 @@ func (e *Exporter) Describe(ch chan<- *prometheus.Desc) {
 	ch <- e.collectorAvail
 }
 
-// Collect implements prometheus.Collector, following the order defined in
-// section 5: checks connectivity, updates mariadb_up, runs the enabled
-// collectors in parallel with a timeout, and tallies errors and durations.
+// Collect implements prometheus.Collector with no caller deadline other than
+// the internal cap. The HTTP handler uses WithContext instead, so a scrape
+// abandoned by Prometheus stops its queries.
 func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
+	e.CollectContext(context.Background(), ch)
+}
+
+// WithContext returns a collector bound to ctx — typically the HTTP request's
+// context, already carrying the scrape deadline. It is meant to be registered
+// in a per-request registry; the counters and histograms stay in the
+// Exporter, shared across scrapes.
+func (e *Exporter) WithContext(ctx context.Context) prometheus.Collector {
+	return scopedCollector{e: e, ctx: ctx}
+}
+
+type scopedCollector struct {
+	e   *Exporter
+	ctx context.Context
+}
+
+func (s scopedCollector) Describe(ch chan<- *prometheus.Desc) { s.e.Describe(ch) }
+func (s scopedCollector) Collect(ch chan<- prometheus.Metric) { s.e.CollectContext(s.ctx, ch) }
+
+// CollectContext follows the order defined in section 5: checks
+// connectivity, updates mariadb_up, runs the enabled collectors in parallel
+// with a timeout, and tallies errors and durations. The scrape ends at
+// whichever comes first: ctx's deadline/cancellation or collectorTimeout.
+func (e *Exporter) CollectContext(parent context.Context, ch chan<- prometheus.Metric) {
 	start := time.Now()
 
 	// Always emits the internal metrics, even with the database offline (section 17).
@@ -120,7 +144,7 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		e.up.Collect(ch)
 	}()
 
-	ctx, cancel := context.WithTimeout(context.Background(), collectorTimeout)
+	ctx, cancel := context.WithTimeout(parent, collectorTimeout)
 	defer cancel()
 
 	if err := e.db.PingContext(ctx); err != nil {
@@ -159,11 +183,8 @@ func (e *Exporter) Collect(ch chan<- prometheus.Metric) {
 		go func(c collector.Collector) {
 			defer wg.Done()
 
-			cctx, ccancel := context.WithTimeout(ctx, collectorTimeout)
-			defer ccancel()
-
 			cStart := time.Now()
-			err := collectSafely(c, cctx, e.db, ch)
+			err := collectSafely(c, ctx, e.db, ch)
 			elapsed := time.Since(cStart).Seconds()
 
 			ch <- prometheus.MustNewConstMetric(

@@ -320,3 +320,24 @@ func TestExporterNoConstLabelsWithoutPMM(t *testing.T) {
 		}
 	}
 }
+
+// WithContext binds the scrape to the caller's context: a scrape abandoned by
+// Prometheus stops at the connectivity check instead of running the
+// collectors, and reports mariadb_up=0.
+func TestWithContextStopsCanceledScrape(t *testing.T) {
+	c := newFakeCollector("never", true, nil)
+	e, _ := newTestExporter(t, []collector.Collector{c})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	reg := prometheus.NewRegistry()
+	require.NoError(t, reg.Register(e.WithContext(ctx)))
+	families, err := reg.Gather()
+	require.NoError(t, err)
+
+	up, ok := familyValue(families, "mariadb_up")
+	require.True(t, ok)
+	require.Equal(t, 0.0, up)
+	require.False(t, familyExists(families, "fake_never"), "collectors must not run on a canceled scrape")
+}

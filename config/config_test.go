@@ -49,7 +49,7 @@ func TestNormalizeDSN(t *testing.T) {
 			want:  "pmm:senha@tcp(localhost:3306)/?timeout=30s&readTimeout=30s",
 		},
 		{
-			name:  "without credentials reads ~/.my.cnf",
+			name:  "without credentials",
 			input: "mariadb://@tcp(localhost:3306)/?readTimeout=30s",
 			want:  "@tcp(localhost:3306)/?readTimeout=30s",
 		},
@@ -80,7 +80,7 @@ func TestNormalizeDSNEmpty(t *testing.T) {
 }
 
 // The password must never appear in logs.
-func TestRedactDSN(t *testing.T) {
+func TestRedacted(t *testing.T) {
 	cases := []struct {
 		name  string
 		input string
@@ -89,12 +89,12 @@ func TestRedactDSN(t *testing.T) {
 		{
 			name:  "password is masked",
 			input: "mariadb://pmm:senha_secreta@tcp(localhost:3306)/",
-			want:  "mariadb://pmm:***@tcp(localhost:3306)/",
+			want:  "pmm:***@tcp(localhost:3306)/",
 		},
 		{
 			name:  "without password stays the same",
-			input: "mariadb://@tcp(localhost:3306)/",
-			want:  "mariadb://@tcp(localhost:3306)/",
+			input: "mariadb://pmm@tcp(localhost:3306)/",
+			want:  "pmm@tcp(localhost:3306)/",
 		},
 		{
 			name:  "without credentials does not mask the port",
@@ -105,8 +105,9 @@ func TestRedactDSN(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, RedactDSN(tc.input))
-			require.NotContains(t, RedactDSN(tc.input), "senha_secreta")
+			cfg, err := DataSource{Name: tc.input}.DriverConfig()
+			require.NoError(t, err)
+			require.Equal(t, tc.want, Redacted(cfg))
 		})
 	}
 }
@@ -144,7 +145,8 @@ func TestRegisterDefaults(t *testing.T) {
 	require.Equal(t, []string{":9104"}, cfg.Web.ListenAddresses())
 	require.Empty(t, cfg.Web.WebConfigFile(), "without --web.config.file, the default is plain HTTP")
 	require.Equal(t, "/metrics", cfg.Web.TelemetryPath)
-	require.Equal(t, 0, cfg.Web.MaxRequests)
+	require.Equal(t, 5, cfg.Web.MaxRequests)
+	require.Equal(t, 1000, cfg.CustomMetricsMaxRows)
 
 	require.Equal(t, 3, cfg.DataSource.MaxOpen)
 	require.Equal(t, 3, cfg.DataSource.MaxIdle)

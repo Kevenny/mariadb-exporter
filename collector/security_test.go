@@ -121,6 +121,7 @@ mariadb_extra_colunas:
 	require.NoError(t, err)
 
 	db, mock := newMockDB(t)
+	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT 'a'").WillReturnRows(
 		sqlmock.NewRows([]string{"c", "total", "extra"}).AddRow("a", 1, "sobrando"),
 	)
@@ -153,6 +154,7 @@ mariadb_utf8_teste:
 
 	db, mock := newMockDB(t)
 	// An isolated 0xff is not valid UTF-8.
+	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT 'x'").WillReturnRows(
 		sqlmock.NewRows([]string{"c", "total"}).AddRow([]byte{0xff, 0xfe, 0x41}, 1),
 	)
@@ -417,6 +419,7 @@ mariadb_teste_labels:
 	require.NoError(t, err)
 
 	db, mock := newMockDB(t)
+	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT 'demo'").WillReturnRows(
 		sqlmock.NewRows([]string{"schema_name", "total"}).AddRow("demo", 7),
 	)

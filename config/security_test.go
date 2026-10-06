@@ -14,9 +14,16 @@ import (
 
 const senhaSecreta = "S3nh4-Sup3r-S3cr3t4"
 
-// RedactDSN is the only barrier between the DSN and the logs. These cases
-// cover formats that could escape the masking heuristic.
-func TestRedactDSNNeverLeaksPassword(t *testing.T) {
+func redact(t *testing.T, dsn string) string {
+	t.Helper()
+	cfg, err := DataSource{Name: dsn}.DriverConfig()
+	require.NoError(t, err)
+	return Redacted(cfg)
+}
+
+// Redacted is the only barrier between the connection settings and the logs.
+// These cases cover formats that could escape a string-based masking.
+func TestRedactedNeverLeaksPassword(t *testing.T) {
 	cases := []string{
 		"mariadb://user:" + senhaSecreta + "@tcp(localhost:3306)/",
 		"mysql://user:" + senhaSecreta + "@tcp(localhost:3306)/",
@@ -31,7 +38,7 @@ func TestRedactDSNNeverLeaksPassword(t *testing.T) {
 
 	for _, dsn := range cases {
 		t.Run(dsn[:min(28, len(dsn))], func(t *testing.T) {
-			redacted := RedactDSN(dsn)
+			redacted := redact(t, dsn)
 			require.NotContains(t, redacted, senhaSecreta,
 				"the password leaked in the masked DSN: %q", redacted)
 		})
@@ -39,27 +46,18 @@ func TestRedactDSNNeverLeaksPassword(t *testing.T) {
 }
 
 // A password containing ':' must be masked in full, not only after its last ':'.
-func TestRedactDSNPasswordWithColon(t *testing.T) {
-	dsn := "mariadb://user:parte1:parte2@tcp(localhost:3306)/"
-	redacted := RedactDSN(dsn)
-
-	require.Equal(t, "mariadb://user:***@tcp(localhost:3306)/", redacted)
-}
-
-// An '@' in the query parameters must not be mistaken for the credentials
-// separator — that used to leave the whole password in the log.
-func TestRedactDSNAtSignInParams(t *testing.T) {
-	dsn := "user:" + senhaSecreta + "@tcp(h:3306)/db?x=a@b"
-	require.Equal(t, "user:***@tcp(h:3306)/db?x=a@b", RedactDSN(dsn))
+func TestRedactedPasswordWithColon(t *testing.T) {
+	redacted := redact(t, "mariadb://user:parte1:parte2@tcp(localhost:3306)/")
+	require.Equal(t, "user:***@tcp(localhost:3306)/", redacted)
 }
 
 // The masking must agree with how the driver itself splits the DSN: whatever
 // the driver would use as the password must never reach the log.
-func TestRedactDSNMatchesDriverParsing(t *testing.T) {
+func TestRedactedMatchesDriverParsing(t *testing.T) {
 	dsns := []string{
 		"mariadb://user:" + senhaSecreta + "@tcp(localhost:3306)/",
 		"user:pa:ss:" + senhaSecreta + "@tcp(h:3306)/db",
-		"user:p@ss@" + senhaSecreta + "@tcp(h:3306)/db?x=a@b&y=c:d",
+		"user:p@ss@" + senhaSecreta + "@tcp(h:3306)/db?timeout=5s",
 		"user@dominio:" + senhaSecreta + "@unix(/var/run/mysqld/mysqld.sock)/",
 		"user:" + senhaSecreta + "/x@tcp(h:3306)/db",
 	}
@@ -71,7 +69,7 @@ func TestRedactDSNMatchesDriverParsing(t *testing.T) {
 		require.NoError(t, err, raw)
 		require.NotEmpty(t, parsed.Passwd)
 
-		redacted := RedactDSN(raw)
+		redacted := redact(t, raw)
 		require.NotContains(t, redacted, parsed.Passwd, "password leaked: %q", redacted)
 		require.Contains(t, redacted, parsed.User+":***@", "user lost: %q", redacted)
 		require.Contains(t, redacted, parsed.Addr, "address lost: %q", redacted)

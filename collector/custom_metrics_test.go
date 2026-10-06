@@ -52,6 +52,7 @@ func TestCustomMetricsCollector(t *testing.T) {
 		AddRow("vendas", "Query", 5).
 		AddRow("vendas", "Sleep", 12)
 
+	mock.ExpectBegin()
 	mock.ExpectQuery("FROM information_schema.PROCESSLIST").WillReturnRows(rows)
 
 	metrics, err := runCollect(t, c, db)
@@ -92,6 +93,7 @@ mariadb_custom_io:
 	require.NoError(t, err)
 
 	db, mock := newMockDB(t)
+	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT 'vendas'").
 		WillReturnRows(sqlmock.NewRows([]string{"schema_name", "reads", "writes"}).AddRow("vendas", 10, 20))
 
@@ -167,6 +169,7 @@ mariadb_col_errada:
 	require.NoError(t, err)
 
 	db, mock := newMockDB(t)
+	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT 1").WillReturnRows(sqlmock.NewRows([]string{"existe"}).AddRow(1))
 
 	metrics, err := runCollect(t, c, db)
@@ -197,6 +200,7 @@ func TestCustomMetricsCollectorMultipleFiles(t *testing.T) {
 	require.Len(t, c.metrics, 2)
 
 	db, mock := newMockDB(t)
+	mock.ExpectBegin()
 	mock.ExpectQuery("SELECT 1").WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(1))
 	mock.ExpectQuery("SELECT 2").WillReturnRows(sqlmock.NewRows([]string{"v"}).AddRow(2))
 
@@ -206,4 +210,87 @@ func TestCustomMetricsCollectorMultipleFiles(t *testing.T) {
 	snaps := snapshot(t, metrics)
 	require.Equal(t, float64(1), requireMetric(t, snaps, "mariadb_a", nil).Value)
 	require.Equal(t, float64(2), requireMetric(t, snaps, "mariadb_b", nil).Value)
+}
+
+// Custom queries run inside a READ ONLY transaction that is always rolled back.
+func TestCustomMetricsRunInReadOnlyTransaction(t *testing.T) {
+	path := writeTempYAML(t, `
+mariadb_ro_check:
+  query: SELECT 1 AS total
+  metrics:
+    - total:
+        usage: "GAUGE"
+`)
+	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
+	require.NoError(t, err)
+
+	db, mock := newMockDB(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT 1").WillReturnRows(sqlmock.NewRows([]string{"total"}).AddRow(1))
+	mock.ExpectRollback()
+
+	_, err = runCollect(t, c, db)
+	require.NoError(t, err)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
+// A query returning more rows than the cap emits up to the cap and reports
+// an error, so the cardinality blow-up is visible in mariadb_scrape_errors_total.
+func TestCustomMetricsMaxRows(t *testing.T) {
+	path := writeTempYAML(t, `
+mariadb_many_rows:
+  query: SELECT name, total FROM t
+  metrics:
+    - name:
+        usage: "LABEL"
+    - total:
+        usage: "GAUGE"
+`)
+	c, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
+	require.NoError(t, err)
+	c.SetMaxRows(2)
+
+	db, mock := newMockDB(t)
+	mock.ExpectBegin()
+	mock.ExpectQuery("SELECT name").WillReturnRows(
+		sqlmock.NewRows([]string{"name", "total"}).AddRow("a", 1).AddRow("b", 2).AddRow("c", 3),
+	)
+
+	metrics, err := runCollect(t, c, db)
+	require.ErrorContains(t, err, "more than 2 rows")
+	require.Len(t, metrics, 2)
+}
+
+func TestCustomMetricsRejectsWriteStatements(t *testing.T) {
+	cases := map[string]string{
+		"update":             "UPDATE t SET x = 1",
+		"delete in comment":  "/* SELECT */ DELETE FROM t",
+		"executable comment": "/*!50000 DELETE FROM t */ SELECT 1",
+		"mariadb exec cmt":   "/*M!100000 DROP TABLE t */",
+		"only a comment":     "-- SELECT 1",
+		"call":               "CALL do_things()",
+	}
+	for name, query := range cases {
+		t.Run(name, func(t *testing.T) {
+			path := writeTempYAML(t, "mariadb_bad:\n  query: \""+query+"\"\n  metrics:\n    - total:\n        usage: \"GAUGE\"\n")
+			_, err := NewCustomMetricsCollector([]string{path}, testLogger(), allFeatures(), nil)
+			require.ErrorContains(t, err, "must be a SELECT")
+		})
+	}
+}
+
+func TestLeadingKeyword(t *testing.T) {
+	cases := map[string]string{
+		"SELECT 1":                      "SELECT",
+		"  \n\tselect 1":                "SELECT",
+		"(SELECT 1) UNION (SELECT 2)":   "SELECT",
+		"-- note\n# other\nSHOW STATUS": "SHOW",
+		"/* a */ /* b */ WITH x AS (SELECT 1) SELECT * FROM x": "WITH",
+		"VALUES (1)":      "VALUES",
+		"/*!SELECT 1*/":   "/*!",
+		"/* unterminated": "",
+	}
+	for query, want := range cases {
+		require.Equal(t, want, leadingKeyword(query), query)
+	}
 }
