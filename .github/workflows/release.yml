@@ -16,7 +16,10 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          # Latest 1.26 patch: go.mod pins only the minimum (1.26.0), which lacks
+          # the standard library security fixes govulncheck checks for.
+          go-version: "1.26.x"
+          check-latest: true
       - run: go test -race -count=1 ./...
       - uses: goreleaser/goreleaser-action@v7
         with:
